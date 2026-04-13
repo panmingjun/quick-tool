@@ -68,4 +68,4 @@ Wayland 下全局快捷键需要用户首次授权：
 
 ## License
 
-MIT OR Apache-2.0
+MIT
