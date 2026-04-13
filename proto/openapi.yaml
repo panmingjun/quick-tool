@@ -1,0 +1,175 @@
+# Quick Tool API 协议定义
+
+openapi: 3.0.0
+info:
+  title: Quick Tool API
+  version: 1.0.0
+  description: Quick Tool 服务端 REST API
+
+servers:
+  - url: https://api.quicktool.io
+
+paths:
+  # 认证 API
+  /api/v1/auth/register:
+    post:
+      summary: 用户注册
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '200':
+          description: 注册成功
+
+  /api/v1/auth/login:
+    post:
+      summary: 用户登录
+      tags: [Auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: 登录成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+
+  # 备份 API
+  /api/v1/backup:
+    get:
+      summary: 获取备份列表
+      tags: [Backup]
+      responses:
+        '200':
+          description: 备份列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BackupInfo'
+
+  /api/v1/backup/upload:
+    post:
+      summary: 上传备份
+      tags: [Backup]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BackupUploadRequest'
+      responses:
+        '200':
+          description: 上传成功
+
+  # 工具 API
+  /api/v1/tools:
+    get:
+      summary: 获取工具列表
+      tags: [Tools]
+      responses:
+        '200':
+          description: 工具列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ToolInfo'
+
+  /api/v1/tools/{id}/download:
+    get:
+      summary: 下载工具 WASM
+      tags: [Tools]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: WASM 文件
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+
+components:
+  schemas:
+    RegisterRequest:
+      type: object
+      required: [username, password, email]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        email:
+          type: string
+
+    LoginRequest:
+      type: object
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refresh_token:
+          type: string
+
+    BackupInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        created_at:
+          type: string
+        size:
+          type: integer
+
+    BackupUploadRequest:
+      type: object
+      required: [data_type, encrypted_data]
+      properties:
+        data_type:
+          type: string
+        encrypted_data:
+          type: string
+          format: binary
+
+    ToolInfo:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        version:
+          type: string
+        author:
+          type: string
+        download_count:
+          type: integer
+        rating:
+          type: number

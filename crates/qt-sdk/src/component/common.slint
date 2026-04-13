@@ -1,0 +1,168 @@
+// Quick Tool 通用 Slint 组件定义
+
+// 主窗口组件
+export component MainWindow inherits Window {
+    title: "Quick Tool";
+    width: 600px;
+    height: 400px;
+    background: #1e1e2e;
+
+    // 服务端选择
+    in property <string> current-server: "Official";
+    in property <string> user-status: "Not logged in";
+    in property <[string]> servers: ["Official", "Private"];
+    callback server-changed(int);
+
+    // 搜索相关
+    in property <string> search-query: "";
+    callback search-changed(string);
+
+    // 工具列表
+    in property <[string]> tool-names: [];
+    in property <int> selected-tool-index: -1;
+    callback tool-selected(int);
+
+    // ESC键回调
+    callback escape-pressed();
+
+    // 布局
+    VerticalLayout {
+        padding: 16px;
+        spacing: 8px;
+
+        // 服务端和用户状态栏
+        HorizontalLayout {
+            spacing: 8px;
+
+            // 服务端选择按钮（简化实现）
+            Rectangle {
+                width: 150px;
+                height: 32px;
+                border-radius: 4px;
+                background: #313244;
+
+                HorizontalLayout {
+                    padding: 8px;
+
+                    Text {
+                        text: current-server;
+                        color: #cdd6f4;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        text: "▼";
+                        color: #cdd6f4;
+                        horizontal-alignment: right;
+                    }
+                }
+
+                TouchArea {
+                    clicked => { root.server-changed(0); }
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            Text {
+                text: user-status;
+                color: #cdd6f4;
+                vertical-alignment: center;
+            }
+        }
+
+        // 搜索框
+        Rectangle {
+            height: 40px;
+            border-radius: 8px;
+            background: #313244;
+
+            HorizontalLayout {
+                padding: 8px;
+
+                Text {
+                    text: "🔍";
+                    color: #cdd6f4;
+                    width: 24px;
+                    vertical-alignment: center;
+                }
+
+                TextInput {
+                    id: search-input;
+                    text: search-query;
+                    font-size: 14px;
+                    color: #cdd6f4;
+
+                    edited => { root.search-changed(self.text); }
+                }
+            }
+
+            // ESC键处理：通过 TextInput 的 key-pressed 事件
+            key-pressed(event) => {
+                if event.key == Key.Escape {
+                    root.escape-pressed();
+                    return accept;
+                }
+                return reject;
+            }
+        }
+
+        // 工具列表
+        Rectangle {
+            background: #313244;
+            border-radius: 8px;
+            vertical-stretch: 1;
+
+            VerticalLayout {
+                padding: 8px;
+                spacing: 4px;
+
+                for tool-name[index] in tool-names: Rectangle {
+                    height: 32px;
+                    border-radius: 4px;
+                    background: index == selected-tool-index ? #45475a : transparent;
+
+                    TouchArea {
+                        clicked => { root.tool-selected(index); }
+                    }
+
+                    HorizontalLayout {
+                        padding: 8px;
+
+                        Text {
+                            text: tool-name;
+                            color: #cdd6f4;
+                            vertical-alignment: center;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// 悬浮窗组件
+export component FloatingWindow inherits Window {
+    title: "Quick Tool Floating";
+    width: 200px;
+    height: 150px;
+    background: #1e1e2e;
+    no-frame: true;
+
+    in property <float> window-opacity: 0.9;
+    in property <string> content: "";
+
+    Rectangle {
+        border-radius: 8px;
+        background: #313244;
+
+        Text {
+            text: content;
+            color: #cdd6f4;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+}

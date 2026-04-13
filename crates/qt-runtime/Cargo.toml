@@ -1,0 +1,22 @@
+[package]
+name = "qt-runtime"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+qt-core.workspace = true
+qt-sdk.workspace = true
+
+# WASM Runtime
+wasmtime.workspace = true
+wasmtime-wasi.workspace = true
+
+# Async
+tokio.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# Logging
+tracing.workspace = true

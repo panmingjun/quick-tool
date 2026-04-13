@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:16-alpine
+    container_name: quick-tool-db
+    environment:
+      POSTGRES_USER: quicktool
+      POSTGRES_PASSWORD: quicktool_password
+      POSTGRES_DB: quicktool
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U quicktool"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - quick-tool-network
+
+  # Quick Tool 服务端
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: quick-tool-server
+    environment:
+      - DATABASE_URL=postgres://quicktool:quicktool_password@postgres:5432/quicktool
+      - JWT_SECRET=your_jwt_secret_change_this_in_production
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - quick-tool-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+
+networks:
+  quick-tool-network:
+    driver: bridge

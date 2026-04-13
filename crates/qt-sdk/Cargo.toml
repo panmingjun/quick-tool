@@ -1,0 +1,28 @@
+[package]
+name = "qt-sdk"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+qt-core.workspace = true
+
+# GUI
+slint.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Crypto
+argon2.workspace = true
+aes-gcm.workspace = true
+
+# Async
+tokio.workspace = true
+
+# HTTP
+reqwest.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true

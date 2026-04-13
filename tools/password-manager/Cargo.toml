@@ -1,0 +1,27 @@
+[package]
+name = "password-manager"
+version.workspace = true
+edition.workspace = true
+
+# 作为可执行工具，支持独立调试
+[[bin]]
+name = "password-manager"
+path = "src/main.rs"
+
+[lib]
+name = "password_manager"
+path = "src/lib.rs"
+
+[dependencies]
+qt-sdk.workspace = true
+qt-core.workspace = true
+
+slint.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Crypto (在 WASM 内使用)
+argon2.workspace = true
+aes-gcm.workspace = true

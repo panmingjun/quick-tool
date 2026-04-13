@@ -1,0 +1,58 @@
+[package]
+name = "qt-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+qt-core.workspace = true
+
+# GUI
+slint.workspace = true
+
+# Wayland
+ashpd.workspace = true
+smithay-client-toolkit.workspace = true
+
+# X11
+x11rb.workspace = true
+
+# Async
+tokio.workspace = true
+
+# Database (SQLite for client)
+sqlx = { workspace = true, features = ["sqlite"] }
+
+# Config
+toml.workspace = true
+directories.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# HTTP Client
+reqwest.workspace = true
+
+# Crypto
+argon2.workspace = true
+aes-gcm.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Time
+chrono.workspace = true
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+[build-dependencies]
+slint-build = "1.5"

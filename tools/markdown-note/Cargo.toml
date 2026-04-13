@@ -1,0 +1,22 @@
+[package]
+name = "markdown-note"
+version.workspace = true
+edition.workspace = true
+
+# 作为可执行工具，支持独立调试
+[[bin]]
+name = "markdown-note"
+path = "src/main.rs"
+
+[lib]
+name = "markdown_note"
+path = "src/lib.rs"
+
+[dependencies]
+qt-sdk.workspace = true
+qt-core.workspace = true
+
+slint.workspace = true
+serde.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

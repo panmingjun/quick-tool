@@ -2,6 +2,8 @@
 
 跨平台 Rust 快捷工具，类似 Alfred/Raycast。
 
+> ⚠️ **声明**：本项目由 AI（Claude）生成，当前处于早期开发阶段，核心功能尚未完全实现。主要用于学习和实验。
+
 ## 功能特性
 
 - 🚀 **快捷键唤起**：Command+Space 快速启动，支持自定义快捷键
@@ -30,6 +32,21 @@ quick-tool/
 └── docs/               # 文档
 ```
 
+## 快速启动
+
+```bash
+# 客户端
+cargo run --bin qt-client          # 正常启动
+cargo run --bin qt-client -- --offline  # 离线启动
+
+# 服务端
+cargo run --bin qt-server          # 启动服务端（端口 8080）
+
+# 工具独立调试
+cargo run --bin markdown-note      # 调试 Markdown 记事本
+cargo run --bin password-manager   # 调试密码管理器
+```
+
 ## 文档
 
 - [调试启动命令](docs/debug-commands.md)
@@ -46,25 +63,14 @@ quick-tool/
 | 服务端 | Axum + PostgreSQL |
 | 客户端存储 | SQLite |
 | 加密 | Argon2 + AES-256-GCM |
-| 快捷键 | xdg-desktop-portal (Wayland) / XGrabKey (X11) |
+| 快捷键 | XGrabKey (X11) / xdg-desktop-portal (Wayland) |
 
 ## 系统依赖
-
-### Linux
 
 ```bash
 # Ubuntu/Debian
 sudo apt-get install -y libfontconfig1-dev pkg-config
-
-# Fedora
-sudo dnf install fontconfig-devel pkg-config
 ```
-
-### Wayland 支持
-
-Wayland 下全局快捷键需要用户首次授权：
-- 系统会弹出授权请求
-- 在系统设置中授予 Quick Tool 快捷键权限
 
 ## License
 

@@ -1,0 +1,49 @@
+# Quick Tool 服务端 Dockerfile
+
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /app
+
+# 复制 Cargo 配置
+COPY Cargo.toml Cargo.lock ./
+COPY crates/qt-core/Cargo.toml crates/qt-core/
+COPY crates/qt-server/Cargo.toml crates/qt-server/
+
+# 创建空的 src 文件以缓存依赖
+RUN mkdir -p crates/qt-core/src crates/qt-server/src \
+    && echo "fn main() {}" > crates/qt-core/src/lib.rs \
+    && echo "fn main() {}" > crates/qt-server/src/main.rs
+
+# 编译依赖（缓存层）
+RUN cargo build --release -p qt-server
+
+# 复制实际源代码
+COPY crates/qt-core/src crates/qt-core/src
+COPY crates/qt-server/src crates/qt-server/src
+COPY proto proto
+
+# 重新编译服务端
+RUN cargo build --release -p qt-server
+
+# 运行时镜像
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 复制编译产物
+COPY --from=builder /app/target/release/qt-server /app/qt-server
+
+# 创建非 root 用户
+RUN useradd -r -s /bin/false quicktool \
+    && chown -R quicktool:quicktool /app
+
+USER quicktool
+
+EXPOSE 8080
+
+CMD ["./qt-server"]

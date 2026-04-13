@@ -1,0 +1,17 @@
+[package]
+name = "qt-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+tracing.workspace = true
+
+# Crypto
+argon2.workspace = true
+aes-gcm.workspace = true
+rand = "0.8"

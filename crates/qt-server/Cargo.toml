@@ -1,0 +1,43 @@
+[package]
+name = "qt-server"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+qt-core.workspace = true
+
+# Server
+axum.workspace = true
+tower.workspace = true
+tower-http = { workspace = true, features = ["cors"] }
+
+# Database (PostgreSQL)
+sqlx = { workspace = true, features = ["postgres"] }
+
+# Async
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Crypto
+argon2.workspace = true
+aes-gcm.workspace = true
+
+# Logging
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Time
+chrono.workspace = true
+
+# JWT
+jsonwebtoken = "9"

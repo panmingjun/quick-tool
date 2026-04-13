@@ -1,0 +1,23 @@
+# Quick Tool 默认配置文件
+# 位于 ~/.config/quick-tool/config.toml
+
+# 默认服务器地址
+[server]
+default_address = "https://api.quicktool.io"
+
+# 快捷键配置
+[hotkey]
+# 唤起启动器 (默认: Super+Space，即 Win键+Space 或 Mac Command+Space)
+toggle_launcher = { modifiers = ["Super"], key = "Space" }
+# 唤起悬浮窗 (默认: Super+Shift+Space)
+toggle_floating = { modifiers = ["Super", "Shift"], key = "Space" }
+
+# 窗口配置
+[window]
+width = 600
+height = 400
+
+# 同步控制
+[sync]
+# 自动同步间隔（秒）
+auto_sync_interval = 300
