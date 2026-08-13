@@ -6,8 +6,7 @@ members = [
     "crates/qt-runtime",
     "crates/qt-sdk",
     "crates/qt-server",
-    "tools/markdown-note",
-    "tools/password-manager",
+    "tools/demo-plugin",
 ]
 
 [workspace.package]
@@ -24,6 +23,8 @@ slint = "1.5"
 # WASM Runtime
 wasmtime = "18"
 wasmtime-wasi = "18"
+wit-component = "0.244"
+wit-parser = "0.244"
 
 # Wayland
 ashpd = "0.8"
@@ -76,3 +77,38 @@ chrono = { version = "0.4", features = ["serde"] }
 qt-core = { path = "crates/qt-core" }
 qt-sdk = { path = "crates/qt-sdk" }
 qt-runtime = { path = "crates/qt-runtime" }
+
+
+[workspace.lints.clippy]
+# 基础组全开 warn（不 deny，避免 pedantic 噪音卡死 agent 迭代）
+all       = { level = "warn", priority = -1 }
+pedantic  = { level = "warn", priority = -1 }
+nursery   = { level = "warn", priority = -1 }
+cargo     = { level = "warn", priority = -1 }
+
+# —— agent 作弊红线：全部 deny ——
+unwrap_used            = "deny"   # 逼它用 ? / get()
+expect_used            = "deny"   # 同上，main 里用 #[expect] 显式标注
+panic                  = "deny"   # 禁 panic!()
+dbg_macro              = "deny"   # 禁 dbg!()
+todo                   = "deny"   # 禁 todo!/unimplemented!
+print_stdout           = "deny"   # 库代码禁 println!，逼用 tracing
+print_stderr           = "deny"
+allow_attributes        = "deny"   # 关键：禁 #[allow(clippy::...)]，agent 不能自己静音 lint
+await_holding_lock     = "deny"   # async harness 防死锁
+indexing_slicing       = "deny"   # 呼应你前几轮：禁 arr[i]，逼用 get()
+
+# —— pedantic 里太吵的，主动放行，减少误报噪音 ——
+must_use_candidate     = "allow"
+missing_errors_doc     = "allow"
+missing_panics_doc     = "allow"
+module_name_repetitions = "allow"
+single_match           = "allow"
+
+[workspace.lints.rust]
+unsafe_code            = "deny"   # agent 默认不许写 unsafe
+missing_docs           = "warn"
+
+[profile.dev]
+# demo-plugin 为 no_std cdylib，仅支持 panic=abort（host target 亦需此设置）
+panic = "abort"

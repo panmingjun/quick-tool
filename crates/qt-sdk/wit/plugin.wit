@@ -1,0 +1,48 @@
+package qt:plugin;
+
+/// 数据模型：宿主与插件间传输的驱动属性类型定义
+interface types {
+    /// 数据值：驱动属性的取值，覆盖插件所需的基础标量类型。
+    variant value {
+        boolean(bool),
+        text(string),
+        numeric(f64),
+    }
+
+    /// 属性-值对：`name` 对应模板中公开属性的标识符（snake_case）。
+    record property {
+        name: string,
+        value: value,
+    }
+
+    /// 数据快照（VO）：`get-state` 的返回类型，一组属性-值对的集合。
+    type vo = list<property>;
+}
+
+/// 插件世界：宿主与插件之间的边界契约（数据驱动渲染）
+///
+/// 采用「类 Vue」的运行模型：插件导出静态页面模板与数据快照，宿主负责
+/// 模板编译与数据绑定渲染，交互事件再回传插件。
+/// - `get-ui`：插件返回页面模板（.slint 源码字符串），宿主仅在模板
+///   变化时重新编译（页面级切换）；模板内需用 `in-out property` /
+///   `in property` 声明宿主可写的驱动属性。
+/// - `get-state`：宿主按固定 tick（30FPS）轮询调用，插件返回当前数据
+///   快照（VO），宿主据此对已编译组件实例逐个 `set_property` 更新界面。
+/// - `dispatch-action`：宿主捕获到插件 UI 上的交互事件后回调插件，
+///   插件更新内部状态，随后宿主轮询 `get-state` 拿到状态刷新后的 VO。
+world plugin {
+    use types.{value, property, vo};
+
+    /// 更新 UI 模板：宿主周期性调用，插件返回页面模板（.slint 源码）。
+    /// 字符串较长时宿主可与上次结果比较，仅当模板变化时重新编译渲染。
+    export get-ui: func() -> string;
+
+    /// 分发交互动作：宿主将插件 UI 上的事件（如按钮点击）转发给插件，
+    /// 插件处理动作并返回是否发生了状态变化。`action` 为事件名
+    /// （如 "button-clicked"）。
+    export dispatch-action: func(action: string) -> bool;
+
+    /// 获取数据快照（VO）：宿主按固定 tick 轮询调用，插件返回受驱动
+    /// 属性的当前值列表，宿主据此更新已编译组件的属性。
+    export get-state: func() -> vo;
+}

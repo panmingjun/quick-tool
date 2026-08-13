@@ -10,14 +10,14 @@ pub struct ModuleLoader {
 
 impl ModuleLoader {
     /// 创建新加载器
-    pub fn new(engine: WasmEngine) -> Self {
+    pub const fn new(engine: WasmEngine) -> Self {
         Self { engine }
     }
 
     /// 从文件加载模块
     pub fn load_from_file(&self, path: &Path) -> qt_core::Result<Vec<u8>> {
         std::fs::read(path)
-            .map_err(|e| qt_core::Error::WasmRuntime(format!("读取 WASM 文件失败: {}", e)))
+            .map_err(|e| qt_core::Error::WasmRuntime(format!("读取 WASM 文件失败: {e}")))
     }
 
     /// 从内存加载模块

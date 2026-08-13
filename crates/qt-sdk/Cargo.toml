@@ -3,15 +3,24 @@ name = "qt-sdk"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
+# 插件侧（wasm32）与宿主侧共用的基础依赖
 [dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# 插件侧（guest）：WIT 绑定生成（generate! 宏 + rt 运行时）
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wit-bindgen = "0.51"
+
+# 宿主侧（host）：插件宿主 API、UI 组件与底层能力
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 qt-core.workspace = true
 
 # GUI
 slint.workspace = true
-
-# Serialization
-serde.workspace = true
-serde_json.workspace = true
 
 # Crypto
 argon2.workspace = true

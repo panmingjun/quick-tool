@@ -3,6 +3,9 @@ name = "qt-runtime"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 qt-core.workspace = true
 qt-sdk.workspace = true
@@ -10,6 +13,7 @@ qt-sdk.workspace = true
 # WASM Runtime
 wasmtime.workspace = true
 wasmtime-wasi.workspace = true
+wit-component.workspace = true
 
 # Async
 tokio.workspace = true
@@ -20,3 +24,7 @@ anyhow.workspace = true
 
 # Logging
 tracing.workspace = true
+
+[dev-dependencies]
+slint-interpreter = { version = "=1.15.1", features = ["internal"] }
+spin_on = "0.1.1"

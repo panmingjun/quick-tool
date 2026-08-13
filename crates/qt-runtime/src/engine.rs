@@ -1,17 +1,25 @@
 //! Wasmtime 引擎封装
 
-use wasmtime::*;
+use wasmtime::{Engine, Linker, Config, WasmBacktraceDetails, Module};
 
 /// WASM 引擎配置
 pub struct WasmEngine {
-    engine: Engine,
+    pub(crate) engine: Engine,
     linker: Linker<HostState>,
 }
 
 /// 主机状态
+#[derive(Default)]
 pub struct HostState {
     /// 能力授权
     capabilities: Vec<qt_core::Capability>,
+}
+
+impl HostState {
+    /// 创建带能力授权的主机状态
+    pub const fn new(capabilities: Vec<qt_core::Capability>) -> Self {
+        Self { capabilities }
+    }
 }
 
 impl WasmEngine {
@@ -23,7 +31,7 @@ impl WasmEngine {
         config.consume_fuel(true);
 
         let engine = Engine::new(&config)
-            .map_err(|e| qt_core::Error::WasmRuntime(format!("引擎创建失败: {}", e)))?;
+            .map_err(|e| qt_core::Error::WasmRuntime(format!("引擎创建失败: {e}")))?;
 
         let linker = Linker::new(&engine);
 
@@ -33,12 +41,6 @@ impl WasmEngine {
     /// 加载 WASM 模块
     pub fn load_module(&self, wasm_bytes: &[u8]) -> qt_core::Result<Module> {
         Module::from_binary(&self.engine, wasm_bytes)
-            .map_err(|e| qt_core::Error::WasmRuntime(format!("模块加载失败: {}", e)))
-    }
-}
-
-impl Default for WasmEngine {
-    fn default() -> Self {
-        Self::new().expect("WASM 引擎初始化失败")
+            .map_err(|e| qt_core::Error::WasmRuntime(format!("模块加载失败: {e}")))
     }
 }

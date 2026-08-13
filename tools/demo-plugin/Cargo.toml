@@ -1,0 +1,18 @@
+# 演示插件：demo-plugin
+#
+# 验证「宿主加载 WASM Component → 轮询调用 get-ui/get-state → 数据驱动渲染」的闭环。
+# 插件依赖 qt-sdk（guest 绑定），不再手写 extern "C" 指针/长度 ABI。
+
+[package]
+name = "demo-plugin"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+qt-sdk.workspace = true
+
+[lib]
+crate-type = ["cdylib"]

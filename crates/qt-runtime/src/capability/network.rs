@@ -7,7 +7,7 @@ pub struct NetworkCapability {
 }
 
 impl NetworkCapability {
-    pub fn new(allowed_domains: Vec<String>) -> Self {
+    pub const fn new(allowed_domains: Vec<String>) -> Self {
         Self { allowed_domains }
     }
 

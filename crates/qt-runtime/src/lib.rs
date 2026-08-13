@@ -5,5 +5,6 @@
 pub mod engine;
 pub mod sandbox;
 pub mod loader;
-pub mod instance;
+pub mod plugin;
+pub mod local;
 pub mod capability;

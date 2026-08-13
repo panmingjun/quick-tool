@@ -9,7 +9,7 @@ pub struct ScreenCapability {
 }
 
 impl ScreenCapability {
-    pub fn new(allow_screen_info: bool, allow_capture: bool) -> Self {
+    pub const fn new(allow_screen_info: bool, allow_capture: bool) -> Self {
         Self { allow_screen_info, allow_capture }
     }
 }

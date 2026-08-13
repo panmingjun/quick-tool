@@ -33,12 +33,18 @@ fn main() {
 
     if cli.offline {
         tracing::info!("Quick Tool 客户端离线启动");
-        app::run_with_options(app::AppOptions {
+        if let Err(e) = app::run_with_options(app::AppOptions {
             offline: true,
             debug_plugin: None,
-        });
+        }) {
+            tracing::error!("应用启动失败: {}", e);
+            std::process::exit(1);
+        }
     } else {
         tracing::info!("Quick Tool 客户端启动");
-        app::run();
+        if let Err(e) = app::run() {
+            tracing::error!("应用启动失败: {}", e);
+            std::process::exit(1);
+        }
     }
 }

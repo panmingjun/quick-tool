@@ -9,7 +9,7 @@ pub struct ClipboardCapability {
 }
 
 impl ClipboardCapability {
-    pub fn new(allow_read: bool, allow_write: bool) -> Self {
+    pub const fn new(allow_read: bool, allow_write: bool) -> Self {
         Self { allow_read, allow_write }
     }
 }

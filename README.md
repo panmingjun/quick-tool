@@ -2,7 +2,7 @@
 
 跨平台 Rust 快捷工具，类似 Alfred/Raycast。
 
-> ⚠️ **声明**：本项目由 AI（Claude）生成，当前处于早期开发阶段，核心功能尚未完全实现。主要用于学习和实验。
+> ⚠️ **声明**：本项目由 AI生成，当前处于早期开发阶段，核心功能尚未完全实现。主要用于学习和实验。
 
 ## 功能特性
 
@@ -49,10 +49,12 @@ cargo run --bin password-manager   # 调试密码管理器
 
 ## 文档
 
-- [调试启动命令](docs/debug-commands.md)
-- [服务端部署](docs/server-deployment.md)
+- [总体设计文档](docs/design.md)
+- [插件接入规范](docs/plugin-spec.md)
 - [插件开发指南](docs/plugin-development.md)
+- [服务端部署](docs/server-deployment.md)
 - [离线模式说明](docs/offline-mode.md)
+- [调试启动命令](docs/debug-commands.md)
 
 ## 技术栈
 

@@ -33,7 +33,7 @@ impl Default for ServerConfig {
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> qt_core::Result<()> {
     // 初始化日志（默认 info 级别）
     tracing_subscriber::registry()
         .with(tracing_subscriber::EnvFilter::try_from_default_env()
@@ -59,11 +59,12 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
-        .expect("无法绑定端口");
+        .map_err(|e| qt_core::Error::Network(format!("无法绑定端口: {e}")))?;
 
     tracing::info!("服务已启动，等待连接...");
 
     axum::serve(listener, app)
         .await
-        .expect("服务启动失败");
+        .map_err(|e| qt_core::Error::Network(format!("服务启动失败: {e}")))?;
+    Ok(())
 }

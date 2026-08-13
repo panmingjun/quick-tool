@@ -5,6 +5,8 @@
 pub mod types;
 pub mod error;
 pub mod crypto;
+pub mod manifest;
 
 pub use types::*;
 pub use error::{Error, Result};
+pub use manifest::*;

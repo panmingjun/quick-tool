@@ -1,6 +1,6 @@
 //! X11 全局快捷键实现
 //!
-//! 使用 XGrabKey 拦截全局按键
+//! 使用 XGrabKey 拦截全局按键（适配 x11rb 0.13 API）
 
 use crate::config::hotkey::{Hotkey, Key, Modifier};
 use crate::hotkey::platform::{HotkeyEvent, HotkeyManager};
@@ -23,14 +23,16 @@ impl X11HotkeyManager {
 }
 
 /// 将修饰键转换为 X11 ModMask
-fn modifier_to_x11(modifiers: &[Modifier]) -> u32 {
-    let mut mask = 0u32;
+fn modifier_to_x11(modifiers: &[Modifier]) -> x11rb::protocol::xproto::ModMask {
+    use x11rb::protocol::xproto::ModMask;
+
+    let mut mask = ModMask::from(0u16);
     for m in modifiers {
         match m {
-            Modifier::Ctrl => mask |= x11rb::protocol::xproto::ModMask::CONTROL.into(),
-            Modifier::Alt => mask |= x11rb::protocol::xproto::ModMask::M1.into(),
-            Modifier::Shift => mask |= x11rb::protocol::xproto::ModMask::SHIFT.into(),
-            Modifier::Super => mask |= x11rb::protocol::xproto::ModMask::M4.into(),
+            Modifier::Ctrl => mask |= ModMask::CONTROL,
+            Modifier::Alt => mask |= ModMask::M1,
+            Modifier::Shift => mask |= ModMask::SHIFT,
+            Modifier::Super => mask |= ModMask::M4,
         }
     }
     mask
@@ -56,7 +58,6 @@ fn key_to_x11_keycode(key: &Key) -> Option<u8> {
         Key::F10 => Some(76),
         Key::F11 => Some(95),
         Key::F12 => Some(96),
-        _ => None,
     }
 }
 
@@ -92,82 +93,86 @@ impl HotkeyManager for X11HotkeyManager {
 /// 运行 X11 事件循环
 fn run_x11_event_loop(hotkeys: Vec<Hotkey>, sender: Sender<HotkeyEvent>) -> qt_core::Result<()> {
     use x11rb::connection::Connection;
-    use x11rb::protocol::xproto::*;
+    use x11rb::protocol::xproto::{
+        change_window_attributes, grab_key, ChangeWindowAttributesAux, EventMask, GrabMode,
+        ModMask,
+    };
     use x11rb::xcb_ffi::XCBConnection;
 
     // 连接到 X11
     let (conn, screen_num) = XCBConnection::connect(None)
         .map_err(|e| qt_core::Error::Hotkey(format!("X11 连接失败: {}", e)))?;
 
-    let screen = &conn.setup().roots[screen_num];
+    let screen = conn
+        .setup()
+        .roots
+        .get(screen_num)
+        .ok_or_else(|| qt_core::Error::Hotkey("X11 屏幕信息无效".to_string()))?;
     let root_window = screen.root;
 
     tracing::info!("X11 连接成功，根窗口: {}", root_window);
 
     // 注册所有快捷键
     for hotkey in &hotkeys {
-        let keycode = key_to_x11_keycode(&hotkey.key);
-        if let Some(keycode) = keycode {
-            let modifiers = modifier_to_x11(&hotkey.modifiers);
-
-            // 使用 XGrabKey 拦截按键
-            // GrabModeAsync 表示异步处理，不阻塞其他程序
-            conn.send_request(&GrabKey {
-                owner_events: true,
-                grab_window: root_window,
-                modifiers: modifiers,
-                key: keycode,
-                pointer_mode: GrabMode::ASYNC,
-                keyboard_mode: GrabMode::ASYNC,
-            })
-            .map_err(|e| qt_core::Error::Hotkey(format!("XGrabKey 请求失败: {}", e)))?;
-
-            tracing::info!("已注册快捷键: keycode={}, modifiers={}", keycode, modifiers);
-        } else {
+        let Some(keycode) = key_to_x11_keycode(&hotkey.key) else {
             tracing::warn!("无法映射按键: {:?}", hotkey.key);
-        }
+            continue;
+        };
+        let modifiers = modifier_to_x11(&hotkey.modifiers);
+
+        // 使用 XGrabKey 拦截按键
+        let cookie = grab_key(
+            &conn,
+            true,
+            root_window,
+            modifiers,
+            keycode,
+            GrabMode::ASYNC,
+            GrabMode::ASYNC,
+        )
+        .map_err(|e| qt_core::Error::Hotkey(format!("XGrabKey 请求失败: {}", e)))?;
+        cookie
+            .check()
+            .map_err(|e| qt_core::Error::Hotkey(format!("XGrabKey 注册失败: {}", e)))?;
+
+        tracing::info!("已注册快捷键: keycode={}, modifiers={:?}", keycode, modifiers);
     }
 
-    // 刷新连接
-    conn.flush()
-        .map_err(|e| qt_core::Error::Hotkey(format!("X11 flush 失败: {}", e)))?;
-
     // 选择 KeyPress 事件
-    conn.send_request(&SelectInput {
-        window: root_window,
-        event_mask: EventMask::KEY_PRESS | EventMask::SUBSTRUCTURE_NOTIFY,
-    })
-    .map_err(|e| qt_core::Error::Hotkey(format!("SelectInput 失败: {}", e)))?;
-
-    conn.flush()
-        .map_err(|e| qt_core::Error::Hotkey(format!("X11 flush 失败: {}", e)))?;
+    change_window_attributes(
+        &conn,
+        root_window,
+        &ChangeWindowAttributesAux::new().event_mask(EventMask::KEY_PRESS),
+    )
+    .map_err(|e| qt_core::Error::Hotkey(format!("选择键盘事件失败: {}", e)))?
+    .check()
+    .map_err(|e| qt_core::Error::Hotkey(format!("选择键盘事件失败: {}", e)))?;
 
     tracing::info!("开始监听 X11 键盘事件");
 
     // 事件循环
     loop {
-        conn.flush()
-            .map_err(|e| qt_core::Error::Hotkey(format!("X11 flush 失败: {}", e)))?;
-
-        // 等待事件
-        let event = conn.wait_for_event()
-            .map_err(|e| qt_core::Error::Hotkey(format!("等待事件失败: {}", e)))?;
+        let event = match conn.wait_for_event() {
+            Ok(ev) => ev,
+            Err(e) => {
+                tracing::error!("等待事件失败: {}", e);
+                continue;
+            }
+        };
 
         match event {
-            Event::KeyPress(kp) => {
-                tracing::debug!("KeyPress: keycode={}, state={}", kp.detail, kp.state);
+            x11rb::protocol::Event::KeyPress(kp) => {
+                tracing::debug!("KeyPress: keycode={}, state={:?}", kp.detail, kp.state);
 
                 // 检查是否匹配注册的快捷键
+                let state = ModMask::from(u16::from(kp.state));
                 for hotkey in &hotkeys {
                     let expected_keycode = key_to_x11_keycode(&hotkey.key);
                     let expected_modifiers = modifier_to_x11(&hotkey.modifiers);
 
-                    if expected_keycode == Some(kp.detail) && expected_modifiers == kp.state {
+                    if expected_keycode == Some(kp.detail) && expected_modifiers == state {
                         tracing::info!("快捷键匹配: {:?}", hotkey);
-
-                        sender.send(HotkeyEvent {
-                            hotkey: hotkey.clone(),
-                        }).ok();
+                        let _ = sender.send(HotkeyEvent { hotkey: hotkey.clone() });
                     }
                 }
             }

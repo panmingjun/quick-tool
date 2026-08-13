@@ -19,7 +19,7 @@ pub struct Sandbox {
 
 impl Sandbox {
     /// 创建新沙箱
-    pub fn new(config: SandboxConfig) -> Self {
+    pub const fn new(config: SandboxConfig) -> Self {
         Self { config }
     }
 

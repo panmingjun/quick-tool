@@ -3,11 +3,19 @@ name = "qt-client"
 version.workspace = true
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 qt-core.workspace = true
+qt-runtime.workspace = true
 
 # GUI
 slint.workspace = true
+slint-interpreter = { version = "=1.15.1", features = ["internal"] }
+
+# Async (spawn blocking the sync interpreter compile)
+spin_on = "0.1.1"
 
 # Wayland
 ashpd.workspace = true

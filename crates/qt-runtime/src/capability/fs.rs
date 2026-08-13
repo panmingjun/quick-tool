@@ -7,7 +7,7 @@ pub struct FsCapability {
 }
 
 impl FsCapability {
-    pub fn new(allowed_paths: Vec<String>) -> Self {
+    pub const fn new(allowed_paths: Vec<String>) -> Self {
         Self { allowed_paths }
     }
 

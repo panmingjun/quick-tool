@@ -1,5 +1,7 @@
 // Quick Tool 通用 Slint 组件定义
 
+import { Button } from "std-widgets.slint";
+
 // 主窗口组件
 export component MainWindow inherits Window {
     title: "Quick Tool";
@@ -90,22 +92,21 @@ export component MainWindow inherits Window {
                 }
 
                 TextInput {
-                    id: search-input;
                     text: search-query;
                     font-size: 14px;
                     color: #cdd6f4;
 
                     edited => { root.search-changed(self.text); }
-                }
-            }
 
-            // ESC键处理：通过 TextInput 的 key-pressed 事件
-            key-pressed(event) => {
-                if event.key == Key.Escape {
-                    root.escape-pressed();
-                    return accept;
+                    // ESC键处理：通过 TextInput 的 key-pressed 事件
+                    key-pressed(event) => {
+                        if event.text == "\u{1b}" {
+                            root.escape-pressed();
+                            return accept;
+                        }
+                        return reject;
+                    }
                 }
-                return reject;
             }
         }
 
@@ -163,6 +164,44 @@ export component FloatingWindow inherits Window {
             color: #cdd6f4;
             vertical-alignment: center;
             horizontal-alignment: center;
+        }
+    }
+}
+
+// 插件运行窗口（在插件列表中选择插件后进入）
+export component PluginWindow inherits Window {
+    title: "插件";
+    width: 420px;
+    height: 240px;
+    background: #1e1e2e;
+
+    // 插件名称
+    in property <string> plugin-name: "插件";
+    // 插件渲染容器（动态嵌入插件的 UI 组件）
+    in property <component-factory> plugin-factory <=> container.component-factory;
+
+    // 返回插件列表
+    callback back-to-list();
+
+    VerticalLayout {
+        padding: 24px;
+        spacing: 12px;
+
+        Text {
+            text: plugin-name;
+            color: #89b4fa;
+            font-size: 20px;
+            horizontal-alignment: center;
+        }
+
+        container := ComponentContainer {
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+        }
+
+        Button {
+            text: "返回列表";
+            clicked => { root.back-to-list(); }
         }
     }
 }
