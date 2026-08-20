@@ -1,0 +1,22 @@
+# Markdown 记事本插件
+#
+# WASM 插件：左侧目录树（文件夹 + 笔记列表），右侧编辑器/预览。
+# 依赖 qt-sdk 的 guest 绑定，实现 Guest trait。
+#
+# 构建方式：
+#   cargo build --release --target wasm32-unknown-unknown -p markdown-note
+
+[package]
+name = "markdown-note"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+qt-sdk.workspace = true
+serde = { workspace = true, features = ["derive"] }
+
+[lib]
+crate-type = ["cdylib"]

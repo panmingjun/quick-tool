@@ -32,6 +32,9 @@ pub enum Error {
     #[error("工具错误: {0}")]
     Tool(String),
 
+    #[error("插件源错误: {0}")]
+    PluginSource(String),
+
     #[error("能力未授权: {0}")]
     CapabilityDenied(String),
 

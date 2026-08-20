@@ -1,0 +1,16 @@
+{
+  "id": "demo-plugin",
+  "name": "Demo 插件",
+  "version": "1.0.0",
+  "author": "Quick Tool Team",
+  "description": "用于验证本地 WASM 插件机制的演示插件：点击按钮后下方数字加一",
+  "main": "../../../target/wasm32-unknown-unknown/release/demo_plugin.wasm",
+  "engine": "wasm",
+  "features": [
+    {
+      "code": "demo",
+      "explain": "运行演示：点击按钮数字加一",
+      "cmds": ["demo", "计数", "测试"]
+    }
+  ]
+}

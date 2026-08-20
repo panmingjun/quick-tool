@@ -5,8 +5,10 @@ members = [
     "crates/qt-client",
     "crates/qt-runtime",
     "crates/qt-sdk",
+    "crates/qt-storage",
     "crates/qt-server",
     "tools/demo-plugin",
+    "tools/markdown-note",
 ]
 
 [workspace.package]
@@ -77,6 +79,7 @@ chrono = { version = "0.4", features = ["serde"] }
 qt-core = { path = "crates/qt-core" }
 qt-sdk = { path = "crates/qt-sdk" }
 qt-runtime = { path = "crates/qt-runtime" }
+qt-storage = { path = "crates/qt-storage" }
 
 
 [workspace.lints.clippy]

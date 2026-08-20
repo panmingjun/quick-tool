@@ -24,14 +24,14 @@ pub fn derive_key(password: &str, salt: &[u8]) -> crate::Result<EncryptionKey> {
         Params::DEFAULT_P_COST,
         Some(32),
     )
-    .map_err(|e| Error::Crypto(format!("Argon2 参数错误: {}", e)))?;
+    .map_err(|e| Error::Crypto(format!("Argon2 参数错误: {e}")))?;
 
     let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
 
     let mut key = [0u8; 32];
     argon2
         .hash_password_into(password.as_bytes(), salt, &mut key)
-        .map_err(|e| Error::Crypto(format!("密钥派生失败: {}", e)))?;
+        .map_err(|e| Error::Crypto(format!("密钥派生失败: {e}")))?;
 
     Ok(key)
 }
@@ -39,12 +39,12 @@ pub fn derive_key(password: &str, salt: &[u8]) -> crate::Result<EncryptionKey> {
 /// 使用 AES-256-GCM 加密数据
 pub fn encrypt(key: &EncryptionKey, plaintext: &[u8]) -> crate::Result<(Vec<u8>, EncryptionNonce)> {
     let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| Error::Crypto(format!("Cipher 创建失败: {}", e)))?;
+        .map_err(|e| Error::Crypto(format!("Cipher 创建失败: {e}")))?;
 
     let nonce = generate_nonce();
     let ciphertext = cipher
         .encrypt(&Nonce::from(nonce), plaintext)
-        .map_err(|e| Error::Crypto(format!("加密失败: {}", e)))?;
+        .map_err(|e| Error::Crypto(format!("加密失败: {e}")))?;
 
     Ok((ciphertext, nonce))
 }
@@ -52,11 +52,11 @@ pub fn encrypt(key: &EncryptionKey, plaintext: &[u8]) -> crate::Result<(Vec<u8>,
 /// 使用 AES-256-GCM 解密数据
 pub fn decrypt(key: &EncryptionKey, nonce: &EncryptionNonce, ciphertext: &[u8]) -> crate::Result<Vec<u8>> {
     let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|e| Error::Crypto(format!("Cipher 创建失败: {}", e)))?;
+        .map_err(|e| Error::Crypto(format!("Cipher 创建失败: {e}")))?;
 
     let plaintext = cipher
         .decrypt(&Nonce::from(*nonce), ciphertext)
-        .map_err(|e| Error::Crypto(format!("解密失败: {}", e)))?;
+        .map_err(|e| Error::Crypto(format!("解密失败: {e}")))?;
 
     Ok(plaintext)
 }

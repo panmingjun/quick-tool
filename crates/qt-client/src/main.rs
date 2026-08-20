@@ -19,6 +19,10 @@ struct Cli {
     /// 离线启动模式（不连接服务端，数据暂存退出后同步）
     #[arg(short, long)]
     offline: bool,
+
+    /// 配置文件路径（默认 ~/.config/quicktool/config.json）
+    #[arg(short, long)]
+    config: Option<std::path::PathBuf>,
 }
 
 fn main() {
@@ -31,18 +35,25 @@ fn main() {
 
     let cli = Cli::parse();
 
+    let config_path = cli.config.unwrap_or_else(config::default_config_path);
+
     if cli.offline {
-        tracing::info!("Quick Tool 客户端离线启动");
+        tracing::info!("Quick Tool 客户端离线启动，配置文件: {}", config_path.display());
         if let Err(e) = app::run_with_options(app::AppOptions {
             offline: true,
             debug_plugin: None,
+            config_path,
         }) {
             tracing::error!("应用启动失败: {}", e);
             std::process::exit(1);
         }
     } else {
-        tracing::info!("Quick Tool 客户端启动");
-        if let Err(e) = app::run() {
+        tracing::info!("Quick Tool 客户端启动，配置文件: {}", config_path.display());
+        if let Err(e) = app::run(app::AppOptions {
+            offline: false,
+            debug_plugin: None,
+            config_path,
+        }) {
             tracing::error!("应用启动失败: {}", e);
             std::process::exit(1);
         }

@@ -1,0 +1,16 @@
+{
+  "plugin_sources": {
+    "sources": [
+      {
+        "id": "local",
+        "name": "本地插件源",
+        "kind": "local",
+        "url": "./plugins/local",
+        "enabled": true
+      }
+    ]
+  },
+  "plugin_install_dir": "./data/plugins",
+  "data_dir": "./data/sqlite",
+  "recent_plugins": []
+}

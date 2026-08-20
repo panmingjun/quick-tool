@@ -1,0 +1,16 @@
+{
+  "id": "markdown-note",
+  "name": "Markdown 记事本",
+  "version": "0.1.0",
+  "author": "Quick Tool Team",
+  "description": "Markdown 记事本插件，支持目录树、编辑和预览模式",
+  "main": "/home/panmingjun/rust/quick-tool/target/wasm32-unknown-unknown/release/markdown_note.wasm",
+  "engine": "wasm",
+  "features": [
+    {
+      "code": "markdown-note",
+      "explain": "Markdown 记事本，左侧目录树，右侧编辑器/预览",
+      "cmds": ["markdown", "笔记", "记事本"]
+    }
+  ]
+}

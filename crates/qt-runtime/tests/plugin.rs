@@ -52,6 +52,20 @@ fn read_count(state: &[qt_runtime::plugin::Property]) -> qt_core::Result<f64> {
     }
 }
 
+/// 从数据快照中读取指定属性的布尔值
+fn read_bool(state: &[qt_runtime::plugin::Property], name: &str) -> qt_core::Result<bool> {
+    let prop = state
+        .iter()
+        .find(|p| p.name == name)
+        .ok_or_else(|| qt_core::Error::WasmRuntime(format!("数据快照缺少 {name} 属性")))?;
+    match prop.value {
+        Value::Boolean(b) => Ok(b),
+        ref v => Err(qt_core::Error::WasmRuntime(format!(
+            "{name} 属性应为 boolean，实际为 {v:?}"
+        ))),
+    }
+}
+
 #[test]
 fn plugin_counter_increments_via_state_driven_vo() -> qt_core::Result<()> {
     let wasm = std::fs::read(demo_plugin_wasm()?)
@@ -60,16 +74,25 @@ fn plugin_counter_increments_via_state_driven_vo() -> qt_core::Result<()> {
     let engine = WasmEngine::new()?;
     let mut plugin = engine.instantiate_plugin(&wasm)?;
 
-    // 模板：单一稳定结构，含按钮回调与可驱动属性 count
+    // 模板：单一稳定结构，含按钮回调与可驱动属性 count / popup-visible
     let ui = plugin.get_ui()?;
     assert!(ui.contains("CounterUI"), "模板应为 Slint 组件定义: {ui}");
     assert!(ui.contains("button-clicked"), "模板应包含按钮回调: {ui}");
+    assert!(ui.contains("open-popup"), "模板应包含打开弹窗回调: {ui}");
+    assert!(ui.contains("close-popup"), "模板应包含关闭弹窗回调: {ui}");
+    assert!(ui.contains("popup-visible"), "模板应声明弹窗显示属性: {ui}");
     assert!(ui.contains("count"), "模板应声明 count 属性: {ui}");
     assert_ui_compiles(&ui, true, "count");
+    assert_ui_compiles(&ui, true, "popup-visible");
 
-    // 初始数据快照：count 为 0
+    // 初始数据快照：count 为 0，弹窗未显示
     let state = plugin.get_state()?;
     assert_eq!(read_count(&state)?, 0.0, "初始 count 应为 0");
+    assert_eq!(
+        read_bool(&state, "popup-visible")?,
+        false,
+        "初始弹窗应为隐藏"
+    );
 
     // 点击按钮 → 计数 +1 → 快照为 1
     assert!(plugin.dispatch_action("button-clicked")?, "点击应触发状态变更");
@@ -81,6 +104,24 @@ fn plugin_counter_increments_via_state_driven_vo() -> qt_core::Result<()> {
     let state_after2 = plugin.get_state()?;
     assert_eq!(read_count(&state_after2)?, 2.0, "点击两次后 count 应为 2");
 
+    // 打开弹窗 → 快照 popup-visible 为 true
+    assert!(plugin.dispatch_action("open-popup")?, "打开弹窗应触发状态变更");
+    let state_popup = plugin.get_state()?;
+    assert_eq!(
+        read_bool(&state_popup, "popup-visible")?,
+        true,
+        "打开弹窗后 popup-visible 应为 true"
+    );
+
+    // 关闭弹窗 → 快照 popup-visible 恢复 false
+    assert!(plugin.dispatch_action("close-popup")?, "关闭弹窗应触发状态变更");
+    let state_closed = plugin.get_state()?;
+    assert_eq!(
+        read_bool(&state_closed, "popup-visible")?,
+        false,
+        "关闭弹窗后 popup-visible 应为 false"
+    );
+
     // 模板稳定：点击前后 get-ui 返回相同模板（不重建）
     let ui_after = plugin.get_ui()?;
     assert_eq!(ui, ui_after, "点击前后模板应保持稳定（不重建）");
@@ -88,6 +129,11 @@ fn plugin_counter_increments_via_state_driven_vo() -> qt_core::Result<()> {
     // 轮询语义：状态不变时各 tick 返回相同数据快照
     let state_again = plugin.get_state()?;
     assert_eq!(read_count(&state_again)?, 2.0, "状态不变时快照应保持相同");
+    assert_eq!(
+        read_bool(&state_again, "popup-visible")?,
+        false,
+        "状态不变时弹窗状态应保持相同"
+    );
 
     Ok(())
 }

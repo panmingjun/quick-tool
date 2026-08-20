@@ -2,14 +2,17 @@
 #
 # 验证「宿主加载 WASM Component → 轮询调用 get-ui/get-state → 数据驱动渲染」的闭环。
 # 插件依赖 qt-sdk（guest 绑定），不再手写 extern "C" 指针/长度 ABI。
+#
+# 构建方式：
+#   cargo build --release --target wasm32-unknown-unknown -p demo-plugin
 
 [package]
 name = "demo-plugin"
 version.workspace = true
 edition.workspace = true
 
-[lints]
-workspace = true
+[lints.rust]
+unsafe_code = "allow"
 
 [dependencies]
 qt-sdk.workspace = true

@@ -1,21 +1,22 @@
 //! Slint 应用主模块
 //!
-//! 流程：启动后展示本地已安装插件列表 → 用户选择插件 → 进入插件窗口运行 WASM。
+//! 流程：启动时读取配置文件 → 扫描插件源 → 展示本地已安装插件列表
+//! → 用户选择插件 → 进入插件窗口运行 WASM。
 
 use crate::config::hotkey::Hotkey;
 use crate::config::offline::OfflineState;
+use crate::config::{plugin_install_dir, sqlite_dir};
 use crate::hotkey::create_manager;
 use qt_runtime::engine::WasmEngine;
-use qt_runtime::local::{discover_plugins, LocalPlugin};
 use qt_runtime::plugin::WasmPlugin;
-use slint::{ComponentFactory, ModelRc, Timer, TimerMode, VecModel};
+use qt_runtime::registry::{discover_plugins_from_source, PluginRegistry};
+use slint::{ComponentFactory, ModelRc, VecModel};
 use slint_interpreter::{ComponentHandle, ComponentInstance, Compiler, Value};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
-use std::time::Duration;
 
 /// 宏生成的 Slint 绑定代码（含 `ComponentContainer` 动态工厂，clippy 豁免）
 #[expect(
@@ -36,6 +37,8 @@ pub struct AppOptions {
     pub offline: bool,
     /// 调试插件 ID（用于工具独立调试）
     pub debug_plugin: Option<String>,
+    /// 配置文件路径
+    pub config_path: PathBuf,
 }
 
 /// 全局应用状态
@@ -62,9 +65,30 @@ impl Default for AppState {
 /// 插件会话：已发现的本地插件 + 当前进入的插件实例
 pub struct PluginSession {
     /// 本地插件列表
-    pub plugins: Vec<LocalPlugin>,
+    pub plugins: Vec<PluginInfo>,
     /// 当前进入的插件实例
     pub current: Option<WasmPlugin>,
+}
+
+/// 统一的插件信息
+#[derive(Debug, Clone)]
+pub struct PluginInfo {
+    /// 插件 ID
+    pub id: String,
+    /// 插件名称
+    pub name: String,
+    /// 版本号
+    pub version: String,
+    /// 作者
+    pub author: String,
+    /// 描述
+    pub description: String,
+    /// 所属插件源 ID
+    pub source_id: String,
+    /// WASM 文件路径
+    pub wasm_path: PathBuf,
+    /// 插件根目录
+    pub root_dir: PathBuf,
 }
 
 /// 加锁并处理毒锁（poison）恢复
@@ -72,12 +96,9 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// 运行客户端应用（默认配置）
-pub fn run() -> qt_core::Result<()> {
-    run_with_options(AppOptions {
-        offline: false,
-        debug_plugin: None,
-    })
+/// 运行客户端应用
+pub fn run(options: AppOptions) -> qt_core::Result<()> {
+    run_with_options(options)
 }
 
 /// 运行客户端应用（自定义配置）
@@ -92,9 +113,26 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
     state.debug_plugin = options.debug_plugin;
     let state_arc = Arc::new(Mutex::new(state));
 
-    // 扫描本地插件目录
-    let plugins = discover_local_plugins();
-    tracing::info!("发现本地插件: {} 个", plugins.len());
+    // 加载插件注册表
+    let install_root = plugin_install_dir();
+    let _sqlite_path = sqlite_dir();
+    let registry = match PluginRegistry::load(&options.config_path, install_root.clone()) {
+        Ok(reg) => {
+            tracing::info!("加载插件注册表成功，配置文件: {}", options.config_path.display());
+            reg
+        }
+        Err(e) => {
+            tracing::warn!("加载插件注册表失败，使用默认配置: {e}");
+            // 回退到默认配置
+            let default_config = qt_core::AppConfig::default();
+            let registry = PluginRegistry::from_config(default_config, install_root);
+            registry
+        }
+    };
+
+    // 扫描插件源下的插件
+    let plugins = discover_plugins_from_registry(&registry)?;
+    tracing::info!("发现插件: {} 个", plugins.len());
 
     let session = Arc::new(Mutex::new(PluginSession {
         plugins,
@@ -109,9 +147,6 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
         qt_core::Error::Ui(format!("创建插件窗口失败: {e}"))
     })?;
 
-    // 30 FPS 轮询定时器（进入插件时启动，返回列表时停止）
-    let plugin_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
-
     // 填充插件列表
     {
         let session_guard = lock(&session);
@@ -119,7 +154,7 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
             .plugins
             .iter()
             .map(|p| {
-                slint::SharedString::from(format!("{} v{}", p.manifest.name, p.manifest.version))
+                slint::SharedString::from(format!("{} v{}", p.name, p.version))
             })
             .collect();
         main_window.set_tool_names(ModelRc::new(VecModel::from(names)));
@@ -138,7 +173,6 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
         let weak_main = main_window.as_weak();
         let weak_plugin = plugin_window.as_weak();
         let session = session.clone();
-        let plugin_timer = plugin_timer.clone();
         move |index| {
             let index = usize::try_from(index).unwrap_or_default();
             tracing::info!("选中插件，index={}", index);
@@ -147,8 +181,8 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
                 let session_guard = lock(&session);
                 match session_guard.plugins.get(index) {
                     Some(plugin) => {
-                        let name = plugin.manifest.name.clone();
-                        let result = instantiate_plugin(plugin);
+                        let name = plugin.name.clone();
+                        let result = instantiate_plugin(&plugin);
                         (name, result)
                     }
                     None => return,
@@ -162,89 +196,71 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
             match result {
                 Ok(plugin) => {
                     lock(&session).current = Some(plugin);
-                    // 启动 30 FPS 轮询：模板变化时重编译，数据变化时 set_property 更新
-                    let timer = Timer::default();
-                    let session = session.clone();
+                    // 事件驱动渲染：无定时轮询。
+                    // 交互回调（Slint → dispatch_action → 即时 get-state → set_property）
+                    // 由 compile_plugin_ui 注册的处理器驱动，模板/数据变化即时反映。
                     let weak_plugin = weak_plugin.clone();
-                    // 已编译实例的共享槽，供数据更新时 set_property
-                    let instance_slot: Rc<RefCell<Option<ComponentInstance>>> =
-                        Rc::new(RefCell::new(None));
-                    let mut last_ui: Option<String> = None;
-                    let mut last_state: Option<Vec<qt_runtime::plugin::Property>> = None;
-                    timer.start(
-                        TimerMode::Repeated,
-                        Duration::from_millis(33),
-                        move || {
+                    let ui: Rc<RefCell<PluginUi>> = Rc::new(RefCell::new(PluginUi {
+                        instance: None,
+                        last_ui: None,
+                        handler: None,
+                    }));
+                    let weak_ui = Rc::downgrade(&ui);
+                    // 动作处理器：转发给插件后立即同步 UI（模板 diff 重编译 / 数据 set_property）。
+                    // 对 ui 持弱引用避免循环持有（ui.handler → handler → 弱ui）。
+                    let handler: PluginActionHandler = Rc::new({
+                        let session = session.clone();
+                        let weak_plugin = weak_plugin.clone();
+                        move |action: &str| {
+                            // 1. 转发动作给插件
+                            match lock(&session).current.as_mut() {
+                                Some(plugin) => {
+                                    if let Err(e) = plugin.dispatch_action(action) {
+                                        tracing::error!("转发动作 {} 失败: {}", action, e);
+                                        return;
+                                    }
+                                    tracing::info!("插件收到动作: {}", action);
+                                }
+                                None => {
+                                    tracing::warn!("无活动插件，忽略动作: {}", action);
+                                    return;
+                                }
+                            }
+                            // 2. 同步一次 UI
+                            tracing::info!("动作处理器：开始同步");
                             let Some(pw) = weak_plugin.upgrade() else {
+                                tracing::warn!("动作处理器：插件窗口已销毁，跳过同步");
                                 return;
                             };
-                            let (ui, state) = match lock(&session).current.as_mut() {
-                                Some(plugin) => {
-                                    let ui = match plugin.get_ui() {
-                                        Ok(ui) => ui,
-                                        Err(e) => {
-                                            tracing::error!("轮询插件模板失败: {}", e);
-                                            return;
-                                        }
-                                    };
-                                    let state = match plugin.get_state() {
-                                        Ok(state) => state,
-                                        Err(e) => {
-                                            tracing::error!("轮询插件数据失败: {}", e);
-                                            return;
-                                        }
-                                    };
-                                    (ui, state)
-                                }
-                                None => return,
+                            let Some(ui) = weak_ui.upgrade() else {
+                                tracing::warn!("动作处理器：UI 状态已销毁，跳过同步");
+                                return;
                             };
-                            // 模板变化：重新编译渲染（页面级切换）
-                            if last_ui.as_ref() != Some(&ui) {
-                                tracing::info!("插件模板更新，重新编译");
-                                let session = session.clone();
-                                let dispatcher = move |action: &str| {
-                                    let action = action.to_string();
-                                    match lock(&session).current.as_mut() {
-                                        Some(plugin) => {
-                                            match plugin.dispatch_action(&action) {
-                                                Ok(_changed) => {
-                                                    tracing::info!("插件收到动作: {}", action)
-                                                }
-                                                Err(e) => {
-                                                    tracing::error!(
-                                                        "转发动作 {} 失败: {}",
-                                                        action,
-                                                        e
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        None => {
-                                            tracing::warn!("无活动插件，忽略动作: {}", action)
-                                        }
+                            match lock(&session).current.as_mut() {
+                                Some(plugin) => {
+                                    if let Err(e) = sync_plugin_once(plugin, &pw, &ui) {
+                                        tracing::error!("同步插件 UI 失败: {}", e);
                                     }
-                                };
-                                match compile_plugin_ui(&ui, dispatcher, &instance_slot) {
-                                    Ok(factory) => {
-                                        pw.set_plugin_factory(factory);
-                                        last_ui = Some(ui);
-                                        // 重建后实例状态为初始值，下一 tick 重新应用数据
-                                        *instance_slot.borrow_mut() = None;
-                                        last_state = None;
-                                    }
-                                    Err(e) => tracing::error!("编译插件 UI 失败: {}", e),
+                                }
+                                None => {
+                                    tracing::warn!("动作处理器：无活动插件，跳过同步");
                                 }
                             }
-                            // 数据变化：对已编译实例 set_property 增量更新
-                            if !state_eq(last_state.as_ref(), Some(&state)) {
-                                if let Some(instance) = instance_slot.borrow().as_ref() {
-                                    apply_state(instance, &state);
+                        }
+                    });
+                    ui.borrow_mut().handler = Some(handler);
+
+                    // 首次渲染：进入时立即同步一次（编译模板 + 应用初始数据快照）
+                    if let Some(pw2) = weak_plugin.upgrade() {
+                        match lock(&session).current.as_mut() {
+                            Some(plugin) => {
+                                if let Err(e) = sync_plugin_once(plugin, &pw2, &ui) {
+                                    tracing::error!("初始同步插件 UI 失败: {}", e);
                                 }
-                                last_state = Some(state);
                             }
-                        },
-                    );
-                    *plugin_timer.borrow_mut() = Some(timer);
+                            None => {}
+                        }
+                    }
                 }
                 Err(e) => {
                     tracing::error!("插件加载失败: {}", e);
@@ -261,14 +277,9 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
     plugin_window.on_back_to_list({
         let weak_main = main_window.as_weak();
         let weak_plugin = plugin_window.as_weak();
-        let plugin_timer = plugin_timer.clone();
         let session = session.clone();
         move || {
             tracing::info!("返回插件列表");
-            // 停止 30 FPS 轮询并清空渲染容器
-            if let Some(timer) = plugin_timer.borrow_mut().take() {
-                timer.stop();
-            }
             if let Some(pw) = weak_plugin.upgrade() {
                 pw.set_plugin_factory(ComponentFactory::default());
             }
@@ -306,61 +317,98 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
     Ok(())
 }
 
-/// 扫描本地插件目录（项目开发目录 + 用户数据目录）
-fn discover_local_plugins() -> Vec<LocalPlugin> {
-    let mut dirs = Vec::new();
-
-    // 项目开发目录：<cwd>/plugins
-    if let Ok(cwd) = std::env::current_dir() {
-        dirs.push(cwd.join("plugins"));
-    }
-
-    // 用户数据目录：data_dir/plugins
-    dirs.push(crate::config::data_dir().join("plugins"));
-
+/// 从插件注册表发现插件
+fn discover_plugins_from_registry(
+    registry: &PluginRegistry,
+) -> qt_core::Result<Vec<PluginInfo>> {
     let mut plugins = Vec::new();
-    for dir in dirs {
-        match discover_plugins(&dir) {
-            Ok(mut found) => {
-                // 按 id 去重，避免重复加载
-                for plugin in found.drain(..) {
-                    if !plugins
-                        .iter()
-                        .any(|p: &LocalPlugin| p.manifest.id == plugin.manifest.id)
-                    {
-                        plugins.push(plugin);
+
+    for source in registry.enabled_sources() {
+        match &source.kind {
+            qt_core::PluginSourceKind::Local => {
+                let source_dir = registry.resolve_source_url(source);
+                if !source_dir.is_dir() {
+                    tracing::warn!("本地插件源目录不存在: {:?}", source_dir);
+                    continue;
+                }
+                let found = discover_plugins_from_source(&source_dir, &source.id)
+                    .map_err(|e| qt_core::Error::PluginSource(format!("扫描插件源 {id} 失败: {e}", id = source.id)))?;
+                for p in found {
+                    plugins.push(PluginInfo {
+                        id: p.id,
+                        name: p.name,
+                        version: p.version,
+                        author: p.author,
+                        description: p.description,
+                        source_id: p.source_id,
+                        wasm_path: p.wasm_path,
+                        root_dir: p.root_dir,
+                    });
+                }
+            }
+            qt_core::PluginSourceKind::Remote => {
+                // 从本地安装目录查找已缓存的远程插件
+                let cached_dir = registry.resolve_source_url(source);
+                if cached_dir.is_dir() {
+                    let found = discover_plugins_from_source(&cached_dir, &source.id)
+                        .map_err(|e| qt_core::Error::PluginSource(format!("扫描缓存插件源 {id} 失败: {e}", id = source.id)))?;
+                    for p in found {
+                        plugins.push(PluginInfo {
+                            id: p.id,
+                            name: p.name,
+                            version: p.version,
+                            author: p.author,
+                            description: p.description,
+                            source_id: p.source_id,
+                            wasm_path: p.wasm_path,
+                            root_dir: p.root_dir,
+                        });
                     }
                 }
             }
-            Err(e) => tracing::warn!("扫描插件目录 {} 失败: {}", dir.display(), e),
         }
     }
 
-    plugins
+    Ok(plugins)
 }
 
 /// 实例化本地插件
-fn instantiate_plugin(plugin: &LocalPlugin) -> qt_core::Result<WasmPlugin> {
-    let wasm_path = plugin.wasm_path()?;
-    tracing::info!("加载插件 WASM: {}", wasm_path.display());
+fn instantiate_plugin(plugin: &PluginInfo) -> qt_core::Result<WasmPlugin> {
+    tracing::info!("加载插件 WASM: {}", plugin.wasm_path.display());
 
-    let wasm = std::fs::read(&wasm_path)
-        .map_err(|e| qt_core::Error::WasmRuntime(format!("读取插件 WASM 失败: {}", e)))?;
+    let wasm = std::fs::read(&plugin.wasm_path)
+        .map_err(|e| qt_core::Error::WasmRuntime(format!("读取插件 WASM 失败: {e}")))?;
 
     let engine = WasmEngine::new()?;
     engine.instantiate_plugin(&wasm)
 }
 
+/// 插件动作处理器：转发交互事件并即时同步 UI
+type PluginActionHandler = Rc<dyn Fn(&str)>;
+
+/// 插件 UI 渲染状态（事件驱动，无定时轮询）。
+///
+/// 交互回调触发 `sync_plugin_once`：模板变化时重编译并替换工厂，
+/// 数据变化时对已编译实例 `set_property` 增量更新（组件树不重建）。
+struct PluginUi {
+    /// 已编译组件实例（工厂创建时填充）
+    instance: Option<ComponentInstance>,
+    /// 上次模板源码（用于模板 diff）
+    last_ui: Option<String>,
+    /// 动作处理器：转发插件交互事件并即时同步 UI。
+    ///
+    /// 存于此（随窗口 factory 存活），handler 对 ui 持弱引用避免循环持有。
+    handler: Option<PluginActionHandler>,
+}
+
 /// 编译插件返回的 UI 模板为渲染工厂。
 ///
-/// `dispatch` 用于把插件 UI 上声明的回调桥接到插件 `dispatch-action`：
-/// 宿主枚举组件公开的回调，将每个回调注册为对 `dispatch` 的转发。
-/// `instance_slot` 用于把工厂创建的组件实例暴露给轮询逻辑，以便
-/// 数据变化时对其 `set_property` 增量更新（无需重建组件树）。
+/// 宿主枚举组件公开的回调，将每个回调注册为对 `ui.handler` 的转发
+/// （即转发动作 + 即时同步）；`ui` 同时用于把工厂创建的组件实例暴露给
+/// `sync_plugin_once`，以便数据变化时对其 `set_property` 增量更新。
 fn compile_plugin_ui(
     source: &str,
-    dispatch: impl Fn(&str) + 'static,
-    instance_slot: &Rc<RefCell<Option<ComponentInstance>>>,
+    ui: &Rc<RefCell<PluginUi>>,
 ) -> qt_core::Result<ComponentFactory> {
     let compiler = Compiler::new();
     let result = spin_on::spin_on(
@@ -374,8 +422,7 @@ fn compile_plugin_ui(
             .collect::<Vec<_>>()
             .join("\n");
         return Err(qt_core::Error::WasmRuntime(format!(
-            "插件 UI 编译失败:\n{}",
-            diagnostics
+            "插件 UI 编译失败:\n{diagnostics}"
         )));
     }
 
@@ -386,8 +433,7 @@ fn compile_plugin_ui(
 
     // 插件 UI 公开的回调名即 dispatch-action 的事件名
     let callbacks: Vec<String> = definition.callbacks().collect();
-    let dispatch: Rc<dyn Fn(&str)> = Rc::new(dispatch);
-    let instance_slot = instance_slot.clone();
+    let ui = ui.clone();
 
     Ok(ComponentFactory::new(move |ctx| {
         let instance = match definition.create_embedded(ctx) {
@@ -398,14 +444,23 @@ fn compile_plugin_ui(
             }
         };
 
-        // 暴露实例给轮询逻辑（弱引用避免循环持有）
-        *instance_slot.borrow_mut() = Some(instance.clone_strong());
+        // 暴露实例给同步逻辑（弱引用避免循环持有）
+        let mut ui_guard = ui.borrow_mut();
+        ui_guard.instance = Some(instance.clone_strong());
+        let handler = ui_guard.handler.clone();
+        drop(ui_guard);
+        tracing::info!("插件组件实例已创建");
+
+        let Some(handler) = handler else {
+            tracing::warn!("插件组件创建时 handler 未就绪");
+            return Some(instance);
+        };
 
         for name in &callbacks {
             let cb_name = name.clone();
-            let dispatch = dispatch.clone();
+            let handler = handler.clone();
             let _ = instance.set_callback(name, move |_args| {
-                dispatch(&cb_name);
+                handler(&cb_name);
                 Value::Void
             });
         }
@@ -413,46 +468,47 @@ fn compile_plugin_ui(
     }))
 }
 
-/// 比较两份插件数据快照是否等价（bindgen 生成的类型不实现 PartialEq）。
+/// 事件驱动的即时同步：拉取插件最新模板/数据并应用到 UI。
 ///
-/// 仅比较属性名与值，忽略顺序差异。
-fn state_eq(
-    prev: Option<&Vec<qt_runtime::plugin::Property>>,
-    next: Option<&Vec<qt_runtime::plugin::Property>>,
-) -> bool {
-    let (Some(prev), Some(next)) = (prev, next) else {
-        return prev.is_some() == next.is_some();
-    };
-    let mut next_rest: Vec<_> = next.clone();
-    for p in prev {
-        let idx = next_rest
-            .iter()
-            .position(|q| state_value_eq(&q.value, &p.value) && q.name == p.name);
-        match idx {
-            Some(i) => {
-                next_rest.remove(i);
-            }
-            None => return false,
+/// 由交互回调调用（无定时轮询）。模板变化时重新编译并替换窗口工厂；
+/// 数据快照变化时对已编译实例 `set_property` 增量更新。
+/// 重编译时新工厂回调绑定 `ui.handler`，保持同一事件驱动链路。
+fn sync_plugin_once(
+    plugin: &mut WasmPlugin,
+    pw: &PluginWindow,
+    ui: &Rc<RefCell<PluginUi>>,
+) -> qt_core::Result<()> {
+    // 模板 diff：变化则重编译（页面级切换）
+    let ui_source = plugin.get_ui()?;
+    let mut ui_guard = ui.borrow_mut();
+    if ui_guard.last_ui.as_ref() != Some(&ui_source) {
+        tracing::info!("插件模板更新，重新编译");
+        if ui_guard.handler.is_none() {
+            return Err(qt_core::Error::WasmRuntime("插件 handler 未就绪".to_string()));
+        }
+        let factory = compile_plugin_ui(&ui_source, ui)?;
+        pw.set_plugin_factory(factory);
+        ui_guard.last_ui = Some(ui_source);
+        // 重建后实例状态为初始值，需重新应用数据快照
+        ui_guard.instance = None;
+    }
+    drop(ui_guard);
+
+    // 数据快照 → set_property 增量更新
+    let state = plugin.get_state()?;
+    match ui.borrow().instance.as_ref() {
+        Some(instance) => {
+            tracing::info!("同步插件 UI：实例存在，应用 {} 个属性", state.len());
+            apply_state(instance, &state);
+        }
+        None => {
+            tracing::warn!("同步插件 UI：实例为空，跳过 set_property");
         }
     }
-    next_rest.is_empty()
+    Ok(())
 }
 
-/// 比较两个数据值是否等价
-fn state_value_eq(
-    a: &qt_runtime::plugin::Value,
-    b: &qt_runtime::plugin::Value,
-) -> bool {
-    match (a, b) {
-        (qt_runtime::plugin::Value::Boolean(x), qt_runtime::plugin::Value::Boolean(y)) => {
-            x == y
-        }
-        (qt_runtime::plugin::Value::Text(x), qt_runtime::plugin::Value::Text(y)) => x == y,
-        (qt_runtime::plugin::Value::Numeric(x), qt_runtime::plugin::Value::Numeric(y)) => x == y,
-        _ => false,
-    }
-}
-    /// 将插件数据快照（VO）应用到已编译组件实例。
+/// 将插件数据快照（VO）应用到已编译组件实例。
 ///
 /// 按属性名对组件实例逐个 `set_property`，属性须以 `in-out` / `in`
 /// 可见性声明，否则 `set_property` 返回错误并记录日志。
@@ -463,12 +519,13 @@ fn apply_state(instance: &ComponentInstance, state: &[qt_runtime::plugin::Proper
             qt_runtime::plugin::Value::Text(t) => Value::String(t.clone().into()),
             qt_runtime::plugin::Value::Numeric(n) => Value::Number(*n),
         };
-        if let Err(e) = instance.set_property(&property.name, value) {
-            tracing::warn!(
+        match instance.set_property(&property.name, value) {
+            Ok(()) => tracing::info!("设置插件属性 {} = {:?}", property.name, property.value),
+            Err(e) => tracing::warn!(
                 "设置插件属性 {} 失败（需 in-out/in 可见性）: {:?}",
                 property.name,
                 e
-            );
+            ),
         }
     }
 }
@@ -481,7 +538,7 @@ fn start_hotkey_thread(weak_app: slint::Weak<MainWindow>, state_arc: Arc<Mutex<A
         // 注册唤起快捷键 Command+Space
         let toggle_hotkey = Hotkey::command_space();
         if let Err(e) = manager.register(&toggle_hotkey) {
-            tracing::error!("注册快捷键失败: {}", e);
+            tracing::error!("注册快捷键失败: {e}");
             return;
         }
 

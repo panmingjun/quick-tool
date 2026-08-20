@@ -1,0 +1,34 @@
+[package]
+name = "qt-storage"
+version.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+qt-core.workspace = true
+qt-runtime.workspace = true
+
+# SQLite
+sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "sqlite", "chrono", "uuid"] }
+
+# Async
+tokio.workspace = true
+
+# Serialization
+serde.workspace = true
+serde_json.workspace = true
+
+# Logging
+tracing.workspace = true
+
+# Error handling
+thiserror.workspace = true
+anyhow.workspace = true
+
+# UUID
+uuid.workspace = true
+
+# Time
+chrono.workspace = true

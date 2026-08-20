@@ -18,12 +18,22 @@ wit-component.workspace = true
 # Async
 tokio.workspace = true
 
+# Serialization
+serde_json.workspace = true
+
+# HTTP Client（可选）
+reqwest = { workspace = true, optional = true }
+
 # Error handling
 thiserror.workspace = true
 anyhow.workspace = true
 
 # Logging
 tracing.workspace = true
+
+[features]
+default = []
+http = ["reqwest"]
 
 [dev-dependencies]
 slint-interpreter = { version = "=1.15.1", features = ["internal"] }

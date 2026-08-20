@@ -9,6 +9,7 @@ workspace = true
 [dependencies]
 qt-core.workspace = true
 qt-runtime.workspace = true
+qt-storage.workspace = true
 
 # GUI
 slint.workspace = true

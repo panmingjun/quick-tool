@@ -41,7 +41,7 @@ pub struct PluginManifest {
 impl PluginManifest {
     /// 从 JSON 字符串解析插件清单
     pub fn from_json(json: &str) -> crate::Result<Self> {
-        serde_json::from_str(json).map_err(|e| crate::Error::Config(format!("解析 plugin.json 失败: {}", e)))
+        serde_json::from_str(json).map_err(|e| crate::Error::Config(format!("解析 plugin.json 失败: {e}")))
     }
 
     /// 检查清单是否适配指定运行引擎
