@@ -1,0 +1,31 @@
+package qt:plugin;
+
+/// 插件键值存储：宿主向插件开放的持久化数据能力
+///
+/// 每个插件一个独立 SQLite 库文件（`data/plugins/<plugin_id>/data.sqlite`），
+/// 数据按插件完全隔离；写入受配额限制（按 key/value 字节数累计），
+/// 超限返回 `quota-exceeded`。
+interface storage {
+    /// 存储错误
+    variant kv-error {
+        /// 超出配额，携带配额上限（字节）
+        quota-exceeded(u64),
+        /// 底层数据库/IO 错误
+        io-error(string),
+    }
+
+    /// 读取指定键的值；不存在返回 none
+    kv-get: func(key: string) -> option<string>;
+
+    /// 写入键值（已存在则覆盖）；超出配额时拒绝写入并返回错误
+    kv-set: func(key: string, value: string) -> result<_, kv-error>;
+
+    /// 删除指定键；键不存在视为成功
+    kv-delete: func(key: string) -> result<_, kv-error>;
+
+    /// 列出全部键
+    kv-keys: func() -> result<list<string>, kv-error>;
+
+    /// 当前已用字节数（key 与 value 的 UTF-8 字节长度之和）
+    used-bytes: func() -> u64;
+}

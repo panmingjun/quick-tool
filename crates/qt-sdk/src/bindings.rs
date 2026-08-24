@@ -3,19 +3,24 @@
 //! 由 `wit-bindgen` 的 `generate!` 宏解析 `wit/plugin.wit` 生成：
 //! - `Guest` trait：插件需实现的 `get_ui` / `get_state` / `dispatch_action` 接口
 //! - `export!` 宏：把实现类型导出的插件组件元数据
+//! - `qt::plugin::storage` 模块：宿主键值存储能力（import），插件可在任意
+//!   导出函数内同步调用（如 `storage::kv_set("key", "value")`）；数据按插件
+//!   独立 SQLite 库隔离，写入受配额限制。
 //!
 //! 插件开发方式：
-//! ```rust
+//! ```rust,ignore
 //! use qt_sdk::bindings::{export, Guest};
+//! use qt_sdk::bindings::qt::plugin::storage;
 //!
 //! struct MyPlugin;
 //!
 //! impl Guest for MyPlugin {
-//!     fn get_ui() -> String {
-//!         "...".to_string()
-//!     }
-//!     fn get_state() -> Vec<qt_sdk::bindings::qt::plugin::types::Property> {
-//!         Vec::new()
+//!     fn get_ui() -> String { "...".to_string() }
+//!     fn get_state() -> Vec<qt_sdk::bindings::qt::plugin::types::Property> { Vec::new() }
+//!     fn dispatch_action(action: String) -> bool {
+//!         // 持久化示例（受配额限制，超限返回 Err）
+//!         let _ = storage::kv_set("greeting", "hello");
+//!         true
 //!     }
 //! }
 //!

@@ -162,15 +162,40 @@ export component NoteUI inherits Window {
 
 ```rust
 trait StorageApi {
-    fn get(&self, key: &str) -> qt_core::Result<Option<Vec<u8>>>;
-    fn set(&self, key: &str, value: &[u8]) -> qt_core::Result<()>;
-    fn delete(&self, key: &str) -> qt_core::Result<()>;
+    fn get(&self, key: &str) -> qt_core::Result<Option<String>>;
+    fn set(&mut self, key: &str, value: &str) -> qt_core::Result<()>;
+    fn delete(&mut self, key: &str) -> qt_core::Result<()>;
     fn keys(&self) -> qt_core::Result<Vec<String>>;
 }
 ```
 
 - 数据按插件隔离，写入后由宿主持久化。
 - 存储数据同时是备份/离线同步的单位，遵循 §8 的同步控制。
+
+**插件侧调用方式（已实现）**：WIT `qt:plugin.storage` import，值均为 UTF-8 字符串。
+每个插件一个独立 SQLite 库（`data/plugins/<plugin_id>/data.sqlite`），写入受配额限制
+（默认 10 MiB/插件，超限返回 `kv-error.quota-exceeded`）：
+
+```rust
+use qt_sdk::bindings::qt::plugin::storage;
+
+fn dispatch_action(action: String) -> bool {
+    match action.as_str() {
+        "save" => {
+            // 超配额时返回 Err(KvError::QuotaExceeded(quota))
+            let _ = storage::kv_set("note", "hello");
+            true
+        }
+        "load" => {
+            let _value: Option<String> = storage::kv_get("note");
+            true
+        }
+        _ => false,
+    }
+}
+```
+
+可用函数：`kv-get` / `kv-set` / `kv-delete` / `kv-keys` / `used-bytes`。
 
 ### HTTP 请求 HttpApi
 

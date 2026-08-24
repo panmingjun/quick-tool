@@ -8,7 +8,7 @@
 #![cfg(target_arch = "wasm32")]
 
 use qt_sdk::bindings::export;
-use qt_sdk::bindings::qt::plugin::types::{Property, Value};
+use qt_sdk::bindings::qt::plugin::types::{EventSource, PluginEvent, Property, Value};
 use qt_sdk::bindings::Guest;
 use std::sync::LazyLock;
 
@@ -333,8 +333,13 @@ impl Guest for PluginState {
         ]
     }
 
-    fn dispatch_action(action: String) -> bool {
-        match action.as_str() {
+    /// 宿主转发的统一事件：仅处理自定义 UI 事件，忽略系统事件
+    fn dispatch_event(event: PluginEvent) -> bool {
+        // 系统事件（opened/tick/data-changed）不改变编辑器状态
+        if event.source != EventSource::Custom {
+            return false;
+        }
+        match event.kind.as_str() {
             "toggle-view-mode" => {
                 let mut s = get_state_mut();
                 s.view_mode = match s.view_mode {

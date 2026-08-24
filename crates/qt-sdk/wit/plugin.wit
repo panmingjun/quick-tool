@@ -17,6 +17,29 @@ interface types {
 
     /// 数据快照（VO）：`get-state` 的返回类型，一组属性-值对的集合。
     type vo = list<property>;
+
+    /// 事件来源：区分宿主系统事件与插件 UI 自定义事件
+    enum event-source {
+        /// 系统事件：由宿主生命周期/能力触发（打开插件、数据读写、时间节拍）
+        system,
+        /// 自定义事件：UI 上触发的交互（默认），`kind` 为模板回调名
+        custom,
+    }
+
+    /// 插件事件：宿主转发给插件的统一事件结构
+    ///
+    /// `kind` 取值约定：
+    /// - 系统事件（source=system）：
+    ///   - `opened`：插件被打开（进入插件窗口后发送一次）
+    ///   - `tick`：时间节拍（插件窗口活跃期间每秒一次）
+    ///   - `data-changed`：插件数据被外部变更（预留，如同步回写）
+    /// - 自定义事件（source=custom）：UI 回调名（如 `button-clicked`）
+    record plugin-event {
+        source: event-source,
+        kind: string,
+        /// 事件负载（可选，系统事件可携带数据，如变更的数据键）
+        payload: option<string>,
+    }
 }
 
 /// 插件世界：宿主与插件之间的边界契约（数据驱动渲染）
@@ -26,23 +49,29 @@ interface types {
 /// - `get-ui`：插件返回页面模板（.slint 源码字符串），宿主仅在模板
 ///   变化时重新编译（页面级切换）；模板内需用 `in-out property` /
 ///   `in property` 声明宿主可写的驱动属性。
-/// - `get-state`：宿主按固定 tick（30FPS）轮询调用，插件返回当前数据
+/// - `get-state`：宿主在交互事件后即时调用，插件返回当前数据
 ///   快照（VO），宿主据此对已编译组件实例逐个 `set_property` 更新界面。
 /// - `dispatch-action`：宿主捕获到插件 UI 上的交互事件后回调插件，
-///   插件更新内部状态，随后宿主轮询 `get-state` 拿到状态刷新后的 VO。
+///   插件更新内部状态，随后宿主即时拉取 `get-state` 刷新 VO。
+///
+/// 宿主能力出口：`storage`（键值存储）与 `window`（窗口调整）以 import
+/// 形式开放，插件可在任意导出函数内同步调用；数据按插件独立 SQLite 库
+/// 隔离并受配额限制。
 world plugin {
-    use types.{value, property, vo};
+    use types.{value, property, vo, plugin-event};
+    import storage;
+    import window;
 
-    /// 更新 UI 模板：宿主周期性调用，插件返回页面模板（.slint 源码）。
+    /// 更新 UI 模板：宿主在交互事件后调用，插件返回页面模板（.slint 源码）。
     /// 字符串较长时宿主可与上次结果比较，仅当模板变化时重新编译渲染。
     export get-ui: func() -> string;
 
-    /// 分发交互动作：宿主将插件 UI 上的事件（如按钮点击）转发给插件，
-    /// 插件处理动作并返回是否发生了状态变化。`action` 为事件名
-    /// （如 "button-clicked"）。
-    export dispatch-action: func(action: string) -> bool;
+    /// 分发事件：宿主将统一事件结构转发给插件（系统事件 + 自定义 UI 事件），
+    /// 插件处理并返回是否发生了状态变化。UI 上触发的事件默认为自定义事件，
+    /// `kind` 即模板回调名；打开插件 / 数据读写 / 时间节拍为系统事件。
+    export dispatch-event: func(event: plugin-event) -> bool;
 
-    /// 获取数据快照（VO）：宿主按固定 tick 轮询调用，插件返回受驱动
+    /// 获取数据快照（VO）：宿主在交互事件后即时调用，插件返回受驱动
     /// 属性的当前值列表，宿主据此更新已编译组件的属性。
     export get-state: func() -> vo;
 }

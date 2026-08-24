@@ -2,8 +2,9 @@
 //!
 //! 使用 SQLite 作为持久化存储引擎。
 //! - 按插件源分库：每个插件源对应一个独立的 `.sqlite` 文件
-//! - 按插件分表：每个插件的数据存储在独立表中
+//! - 插件独立键值存储：每个插件一个独立库（`per_plugin`），KV 语义 + 配额限制
 //! - Markdown 记事本数据使用结构化表存储（文件夹、笔记）
 
 pub mod db;
 pub mod markdown;
+pub mod per_plugin;

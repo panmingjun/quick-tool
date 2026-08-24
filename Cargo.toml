@@ -42,6 +42,8 @@ tower-http = "0.5"
 
 # Database
 sqlx = { version = "0.7", features = ["runtime-tokio", "tls-rustls"] }
+# 注意：须与 sqlx 0.7 共享同一 libsqlite3-sys 0.26（links 冲突约束）
+rusqlite = { version = "0.29", features = ["bundled"] }
 
 # Async
 tokio = { version = "1", features = ["full"] }

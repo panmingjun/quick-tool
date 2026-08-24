@@ -85,14 +85,42 @@ plugins/
 | 导出函数 | 类型 | 说明 |
 |----------|------|------|
 | `get-ui` | `func() -> string` | 返回页面模板（`.slint` 源码字符串）。宿主仅在模板**变化时**重新编译渲染（页面级切换） |
-| `get-state` | `func() -> vo` | 返回数据快照（VO）。宿主按 30FPS 轮询，数据变化时对已编译组件实例 `set_property` 增量更新，**不重建组件树** |
-| `dispatch-action` | `func(action: string) -> bool` | 宿主转发插件 UI 上的交互事件（如按钮点击），插件处理并返回是否发生状态变化 |
+| `get-state` | `func() -> vo` | 返回数据快照（VO）。宿主在事件后即时拉取，数据变化时对已编译组件实例 `set_property` 增量更新，**不重建组件树** |
+| `dispatch-event` | `func(event: plugin-event) -> bool` | 宿主转发统一事件结构（系统事件 + 自定义 UI 事件），插件处理并返回是否发生状态变化 |
+
+并开放以下 **import 接口**（宿主能力出口）：
+
+| 导入接口 | 说明 |
+|----------|------|
+| `storage` | 键值存储（key/value 均为 UTF-8 字符串）。每个插件一个独立 SQLite 库（`data/plugins/<plugin_id>/data.sqlite`），数据按插件完全隔离；写入按已用字节累计受配额限制（默认 10 MiB/插件），超限返回 `quota-exceeded`。可用函数：`kv-get` / `kv-set` / `kv-delete` / `kv-keys` / `used-bytes` |
+
+> 架构边界：插件对存储**只发指令**——`storage::kv_*` 是 WIT 生成的绑定函数，
+> 仅序列化参数并触发宿主回调；SQL 执行、文件 IO、配额检查全部由宿主
+> （`qt-storage::per_plugin::PluginStore`）实现。插件侧无任何数据库依赖，
+> 只需依赖 `qt-sdk`。
 
 WIT 数据类型：
 
 - `value`：变体，取值 `boolean(bool)` / `text(string)` / `numeric(f64)`。
 - `property`：记录，`{ name: string, value: value }`，`name` 对应模板中公开属性的标识符（snake_case）。
 - `vo`：`list<property>`，`get-state` 的返回类型。
+
+### 事件模型
+
+宿主与插件间通过统一事件结构 `plugin-event`（record）通信，以 `event-source`
+区分来源，避免系统事件与 UI 事件混用字符串：
+
+| 来源 | `kind` 取值 | 触发时机 |
+|------|------------|----------|
+| `system` | `opened` | 插件被打开（进入插件窗口后发送一次） |
+| `system` | `tick` | 时间节拍（插件窗口活跃期间每秒一次） |
+| `system` | `data-changed` | 插件数据被外部变更（预留，如同步回写） |
+| `custom` | 模板回调名（如 `button-clicked`） | UI 上触发的交互（**默认**） |
+
+- record 结构：`{ source: event-source, kind: string, payload: option<string> }`，
+  系统事件可通过 `payload` 携带数据（如变更的数据键）。
+- 宿主侧便捷构造：`qt_runtime::plugin::{custom_event, system_event}` 与
+  常量 `EVENT_OPENED` / `EVENT_TICK` / `EVENT_DATA_CHANGED`。
 
 ### 插件模板要求
 
@@ -176,7 +204,8 @@ let state: Vec<Property> = plugin.get_state()?;              // 轮询获取数�
 2. 按 30FPS 轮询 `get-state`，与上次快照比较；数据变化则对共享实例逐个 `set_property`，Slint 内部增量更新。
 3. 捕获 UI 回调 → `dispatch-action` 转发给插件 → 插件更新状态 → 下一 tick 数据快照变化 → 宿主更新界面。
 
-> 注：后续引入宿主能力出口（存储/网络/剪贴板/加密）时，在 WIT 中新增对应 `import` 接口即可，宿主与插件两侧绑定同步更新。
+> 注：宿主能力出口（存储/网络/剪贴板/加密）通过 WIT `import` 接口开放，
+> 宿主与插件两侧绑定同步更新。当前已开放 `storage`，其余待引入。
 
 ## 4. 构建与调试
 

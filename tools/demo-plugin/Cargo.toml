@@ -12,7 +12,7 @@ version.workspace = true
 edition.workspace = true
 
 [lints.rust]
-unsafe_code = "allow"
+unsafe_code = "deny"
 
 [dependencies]
 qt-sdk.workspace = true

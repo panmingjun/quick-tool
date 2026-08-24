@@ -8,10 +8,11 @@ workspace = true
 
 [dependencies]
 qt-core.workspace = true
-qt-runtime.workspace = true
 
 # SQLite
 sqlx = { workspace = true, features = ["runtime-tokio", "tls-rustls", "sqlite", "chrono", "uuid"] }
+# 同步 SQLite（插件独立库：客户端无 tokio runtime，宿主同步调用链路）
+rusqlite.workspace = true
 
 # Async
 tokio.workspace = true

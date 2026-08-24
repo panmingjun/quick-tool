@@ -5,12 +5,12 @@
 
 use crate::config::hotkey::Hotkey;
 use crate::config::offline::OfflineState;
-use crate::config::{plugin_install_dir, sqlite_dir};
+use crate::config::plugin_install_dir;
 use crate::hotkey::create_manager;
 use qt_runtime::engine::WasmEngine;
-use qt_runtime::plugin::WasmPlugin;
+use qt_runtime::plugin::{PluginHostState, WasmPlugin};
 use qt_runtime::registry::{discover_plugins_from_source, PluginRegistry};
-use slint::{ComponentFactory, ModelRc, VecModel};
+use slint::{ComponentFactory, ModelRc, Timer, TimerMode, VecModel};
 use slint_interpreter::{ComponentHandle, ComponentInstance, Compiler, Value};
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -115,7 +115,6 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
 
     // 加载插件注册表
     let install_root = plugin_install_dir();
-    let _sqlite_path = sqlite_dir();
     let registry = match PluginRegistry::load(&options.config_path, install_root.clone()) {
         Ok(reg) => {
             tracing::info!("加载插件注册表成功，配置文件: {}", options.config_path.display());
@@ -147,6 +146,9 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
         qt_core::Error::Ui(format!("创建插件窗口失败: {e}"))
     })?;
 
+    // 系统事件 tick 定时器槽：进入插件时启动（每秒 tick），返回列表时停止
+    let plugin_timer: Rc<RefCell<Option<Timer>>> = Rc::new(RefCell::new(None));
+
     // 填充插件列表
     {
         let session_guard = lock(&session);
@@ -173,6 +175,7 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
         let weak_main = main_window.as_weak();
         let weak_plugin = plugin_window.as_weak();
         let session = session.clone();
+        let plugin_timer = plugin_timer.clone();
         move |index| {
             let index = usize::try_from(index).unwrap_or_default();
             tracing::info!("选中插件，index={}", index);
@@ -197,8 +200,8 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
                 Ok(plugin) => {
                     lock(&session).current = Some(plugin);
                     // 事件驱动渲染：无定时轮询。
-                    // 交互回调（Slint → dispatch_action → 即时 get-state → set_property）
-                    // 由 compile_plugin_ui 注册的处理器驱动，模板/数据变化即时反映。
+                    // 统一事件链路：Slint 回调 / 系统事件（opened、tick）
+                    // → dispatch-event → 即时 get-state → set_property。
                     let weak_plugin = weak_plugin.clone();
                     let ui: Rc<RefCell<PluginUi>> = Rc::new(RefCell::new(PluginUi {
                         instance: None,
@@ -206,34 +209,32 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
                         handler: None,
                     }));
                     let weak_ui = Rc::downgrade(&ui);
-                    // 动作处理器：转发给插件后立即同步 UI（模板 diff 重编译 / 数据 set_property）。
+                    // 事件处理器：转发给插件后立即同步 UI（模板 diff 重编译 / 数据 set_property）。
                     // 对 ui 持弱引用避免循环持有（ui.handler → handler → 弱ui）。
-                    let handler: PluginActionHandler = Rc::new({
+                    let handler: PluginEventHandler = Rc::new({
                         let session = session.clone();
                         let weak_plugin = weak_plugin.clone();
-                        move |action: &str| {
-                            // 1. 转发动作给插件
+                        move |event: qt_runtime::plugin::PluginEvent| {
+                            let kind = event.kind.clone();
+                            // 1. 转发事件给插件
                             match lock(&session).current.as_mut() {
                                 Some(plugin) => {
-                                    if let Err(e) = plugin.dispatch_action(action) {
-                                        tracing::error!("转发动作 {} 失败: {}", action, e);
+                                    if let Err(e) = plugin.dispatch_event(&event) {
+                                        tracing::error!("转发事件 {} 失败: {}", kind, e);
                                         return;
                                     }
-                                    tracing::info!("插件收到动作: {}", action);
+                                    tracing::info!("插件收到事件: {}", kind);
                                 }
                                 None => {
-                                    tracing::warn!("无活动插件，忽略动作: {}", action);
+                                    tracing::warn!("无活动插件，忽略事件: {}", kind);
                                     return;
                                 }
                             }
                             // 2. 同步一次 UI
-                            tracing::info!("动作处理器：开始同步");
                             let Some(pw) = weak_plugin.upgrade() else {
-                                tracing::warn!("动作处理器：插件窗口已销毁，跳过同步");
                                 return;
                             };
                             let Some(ui) = weak_ui.upgrade() else {
-                                tracing::warn!("动作处理器：UI 状态已销毁，跳过同步");
                                 return;
                             };
                             match lock(&session).current.as_mut() {
@@ -241,14 +242,19 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
                                     if let Err(e) = sync_plugin_once(plugin, &pw, &ui) {
                                         tracing::error!("同步插件 UI 失败: {}", e);
                                     }
+                                    // 3. 应用插件请求的窗口尺寸（window.set-size import）
+                                    if let Some((w, h)) = plugin.take_window_request() {
+                                        tracing::info!("插件请求窗口尺寸: {w}x{h}");
+                                        pw.window().set_size(slint::WindowSize::Logical(
+                                            slint::LogicalSize::new(w as f32, h as f32),
+                                        ));
+                                    }
                                 }
-                                None => {
-                                    tracing::warn!("动作处理器：无活动插件，跳过同步");
-                                }
+                                None => {}
                             }
                         }
                     });
-                    ui.borrow_mut().handler = Some(handler);
+                    ui.borrow_mut().handler = Some(handler.clone());
 
                     // 首次渲染：进入时立即同步一次（编译模板 + 应用初始数据快照）
                     if let Some(pw2) = weak_plugin.upgrade() {
@@ -261,6 +267,32 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
                             None => {}
                         }
                     }
+
+                    // 系统事件 opened：插件被打开（发送一次）
+                    handler(qt_runtime::plugin::system_event(
+                        qt_runtime::plugin::EVENT_OPENED,
+                        None,
+                    ));
+
+                    // 系统事件 tick：插件窗口活跃期间每秒发送一次，
+                    // payload 携带数字时间戳（Unix 秒，字符串形式）
+                    let tick_handler = handler.clone();
+                    let timer = Timer::default();
+                    timer.start(
+                        TimerMode::Repeated,
+                        std::time::Duration::from_secs(1),
+                        move || {
+                            let unix_secs = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap_or_default()
+                                .as_secs();
+                            tick_handler(qt_runtime::plugin::system_event(
+                                qt_runtime::plugin::EVENT_TICK,
+                                Some(unix_secs.to_string()),
+                            ));
+                        },
+                    );
+                    *plugin_timer.borrow_mut() = Some(timer);
                 }
                 Err(e) => {
                     tracing::error!("插件加载失败: {}", e);
@@ -278,8 +310,13 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
         let weak_main = main_window.as_weak();
         let weak_plugin = plugin_window.as_weak();
         let session = session.clone();
+        let plugin_timer = plugin_timer.clone();
         move || {
             tracing::info!("返回插件列表");
+            // 停止 tick 定时器并清空渲染容器
+            if let Some(timer) = plugin_timer.borrow_mut().take() {
+                timer.stop();
+            }
             if let Some(pw) = weak_plugin.upgrade() {
                 pw.set_plugin_factory(ComponentFactory::default());
             }
@@ -373,18 +410,22 @@ fn discover_plugins_from_registry(
 }
 
 /// 实例化本地插件
+///
+/// 为插件打开独立键值存储（`data/plugins/<plugin_id>/data.sqlite`），
+/// 随实例注入，供插件的 storage import 调用。
 fn instantiate_plugin(plugin: &PluginInfo) -> qt_core::Result<WasmPlugin> {
     tracing::info!("加载插件 WASM: {}", plugin.wasm_path.display());
 
     let wasm = std::fs::read(&plugin.wasm_path)
         .map_err(|e| qt_core::Error::WasmRuntime(format!("读取插件 WASM 失败: {e}")))?;
 
+    let host_state = PluginHostState::with_storage(&plugin_install_dir(), &plugin.id)?;
     let engine = WasmEngine::new()?;
-    engine.instantiate_plugin(&wasm)
+    engine.instantiate_plugin(&wasm, host_state)
 }
 
-/// 插件动作处理器：转发交互事件并即时同步 UI
-type PluginActionHandler = Rc<dyn Fn(&str)>;
+/// 插件事件处理器：把统一事件（系统事件 + 自定义 UI 事件）转发给插件并即时同步 UI
+type PluginEventHandler = Rc<dyn Fn(qt_runtime::plugin::PluginEvent)>;
 
 /// 插件 UI 渲染状态（事件驱动，无定时轮询）。
 ///
@@ -398,7 +439,7 @@ struct PluginUi {
     /// 动作处理器：转发插件交互事件并即时同步 UI。
     ///
     /// 存于此（随窗口 factory 存活），handler 对 ui 持弱引用避免循环持有。
-    handler: Option<PluginActionHandler>,
+    handler: Option<PluginEventHandler>,
 }
 
 /// 编译插件返回的 UI 模板为渲染工厂。
@@ -460,7 +501,8 @@ fn compile_plugin_ui(
             let cb_name = name.clone();
             let handler = handler.clone();
             let _ = instance.set_callback(name, move |_args| {
-                handler(&cb_name);
+                // UI 上触发的事件默认为自定义事件
+                handler(qt_runtime::plugin::custom_event(&cb_name));
                 Value::Void
             });
         }
