@@ -245,9 +245,16 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
                                     // 3. 应用插件请求的窗口尺寸（window.set-size import）
                                     if let Some((w, h)) = plugin.take_window_request() {
                                         tracing::info!("插件请求窗口尺寸: {w}x{h}");
+                                        // 更新尺寸锁（min==max 使平铺合成器保持浮动）
+                                        pw.set_locked_width(w as f32);
+                                        pw.set_locked_height(h as f32);
+                                        // Wayland 下已映射窗口由合成器主导尺寸，
+                                        // 需隐藏重显以新尺寸重新映射，X11 下等效生效。
+                                        pw.hide();
                                         pw.window().set_size(slint::WindowSize::Logical(
                                             slint::LogicalSize::new(w as f32, h as f32),
                                         ));
+                                        let _ = pw.show();
                                     }
                                 }
                                 None => {}
@@ -258,6 +265,10 @@ pub fn run_with_options(options: AppOptions) -> qt_core::Result<()> {
 
                     // 首次渲染：进入时立即同步一次（编译模板 + 应用初始数据快照）
                     if let Some(pw2) = weak_plugin.upgrade() {
+                        // 平铺合成器（如 Hyprland）会把普通窗口平铺为全屏；
+                        // 初始锁定尺寸（min==max）使窗口以固定尺寸对话框浮动
+                        pw2.set_locked_width(DEFAULT_PLUGIN_SIZE.0);
+                        pw2.set_locked_height(DEFAULT_PLUGIN_SIZE.1);
                         match lock(&session).current.as_mut() {
                             Some(plugin) => {
                                 if let Err(e) = sync_plugin_once(plugin, &pw2, &ui) {
@@ -426,6 +437,9 @@ fn instantiate_plugin(plugin: &PluginInfo) -> qt_core::Result<WasmPlugin> {
 
 /// 插件事件处理器：把统一事件（系统事件 + 自定义 UI 事件）转发给插件并即时同步 UI
 type PluginEventHandler = Rc<dyn Fn(qt_runtime::plugin::PluginEvent)>;
+
+/// 插件窗口默认尺寸（逻辑像素），与 common.slint 的 preferred-* 保持一致
+const DEFAULT_PLUGIN_SIZE: (f32, f32) = (420.0, 480.0);
 
 /// 插件 UI 渲染状态（事件驱动，无定时轮询）。
 ///

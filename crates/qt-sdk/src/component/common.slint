@@ -169,11 +169,23 @@ export component FloatingWindow inherits Window {
 }
 
 // 插件运行窗口（在插件列表中选择插件后进入）
+// 注：尺寸用 preferred-* 仅作为初始值；插件经 window.set-size 请求的
+// 运行时调整由宿主更新锁定属性应用。
 export component PluginWindow inherits Window {
     title: "插件";
-    width: 420px;
-    height: 480px;
+    preferred-width: 420px;
+    preferred-height: 480px;
     background: #1e1e2e;
+
+    // 尺寸锁：min == max 使平铺合成器（如 Hyprland）将窗口视为固定尺寸
+    // 对话框而自动浮动，且外框尺寸完全由插件经 set-size 请求控制；
+    // 宿主在应用请求时更新这两个属性并重映射窗口。
+    in-out property <length> locked-width: 420px;
+    in-out property <length> locked-height: 480px;
+    min-width: locked-width;
+    max-width: locked-width;
+    min-height: locked-height;
+    max-height: locked-height;
 
     // 插件名称
     in property <string> plugin-name: "插件";
